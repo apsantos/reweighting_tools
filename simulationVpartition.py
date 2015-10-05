@@ -335,6 +335,87 @@ class hisFile(object):
 
         return
 
+    def generateCurve(self, mu_step=0.000002, mu_low=-1000, mu_len=50):
+        """
+        Generate a PVT that covers ideal gas and high pressure
+        for micellization
+        """
+        T = []
+        mu_max = []
+        N = []
+        for i in range( len(self.runs) ):
+            read_err = self.read(self.runs[i])
+            T_temp = self.getT()
+            mu_temp = self.getmu()
+            if (T_temp not in T):
+                T.append(T_temp)
+                mu_max.append(mu_low)
+
+            for i_T in range( len(T) ):
+                if (T_temp == T[i_T]):
+                    if (mu_temp > mu_max[i_T]):
+                        mu_max[i_T] = mu_temp
+                    break
+
+        mu_step_cut = 0.02
+        temp = []
+        mu = []
+        for i_T in range(len(T)):
+            mu.append(mu_max[i_T])
+            temp.append(T[i_T])
+            N.append(5)
+            for i_mu in range(1,mu_len):
+                temp.append(T[i_T])
+                N.append(5)
+                mu_step_temp = i_mu**4.0 * mu_step
+                if (mu_step_temp <= mu_step_cut):
+                    mu_step_temp = 0.005 * i_mu
+
+                mu_test = mu[i_mu-1] - mu_step_temp
+                if (mu_test > mu_low):
+                    mu.append(mu_test)
+                else:
+                    mu.append(mu_low)
+                print mu_test, mu_step_temp
+
+        generatePVT(temp, mu, N)
+
+    def calcError(self):
+        """
+        Calculate the relative error between the calculated
+        pratition function and the
+        simlulation
+        """
+        T = []
+        mu = []
+        N = []
+        E = []
+        for i in range( len(self.runs) ):
+            read_err = self.read(self.runs[i])
+            # find the <N> and <E> from histograms
+            T.append(self.getT())
+            mu.append(self.getmu())
+            N.append(self.getNave())
+            E.append(self.getEave())
+        # run entropy with runs used to develop partition function
+        try:
+            ifile = open('./pvt.dat', 'r')
+    
+        except IOError:
+            print 'could not find pvt.dat.\n Generating using entropy'
+            generatePVT(T, mu, N)
+        # read pvt.dat inparams['L']=0 # doesn't matter for this, but required for class definition
+        pressure = partition2pressure(inparams)
+        pressure.readPVTsimple()
+        # write %error
+        print 'run T mu | N_sim E_sim | N_partition E_partition | %e(N) %e(E)'
+        print '--------------------------------------------------------------'
+        for i in range( len(self.runs) ):
+            N_err = float(pressure.N[i] - N[i]) / N[i] * 100.0 
+            E_err = float(pressure.E[i] - E[i]) / E[i] * 100.0
+            print '%s %f %f | %f %f | %f %f | %f %f' % (self.runs[i], T[i], mu[i], 
+                                                        N[i], E[i], pressure.N[i], 
+                                                        pressure.E[i], N_err, E_err)
 
 class partition2pressure(object):
     """
@@ -405,46 +486,14 @@ class partition2pressure(object):
     
         pvt_file.close()
 
-    def calcError(self):
-        """
-        Calculate the relative error between the calculated
-        pratition function and the
-        simlulation
-        """
-        T = []
-        mu = []
-        N = []
-        E = []
-        for i in range( len(self.runs) ):
-            read_err = self.read(self.runs[i])
-            # find the <N> and <E> from histograms
-            T.append(self.getT())
-            mu.append(self.getmu())
-            N.append(self.getNave())
-            E.append(self.getEave())
-        # run entropy with runs used to develop partition function
-        try:
-            ifile = open('./pvt.dat', 'r')
-    
-        except IOError:
-            print 'could not find pvt.dat.\n Generating using entropy'
-            generatePVT(T, mu, N)
-        # read pvt.dat inparams['L']=0 # doesn't matter for this, but required for class definition
-        pressure = partition2pressure(inparams)
-        pressure.readPVTsimple()
-        # write %error
-        print 'run T mu | N_sim E_sim | N_partition E_partition | %e(N) %e(E)'
-        print '--------------------------------------------------------------'
-        for i in range( len(self.runs) ):
-            print '%s %f %f | %f %f | %f %f | %f %f' % (self.runs[i], T[i], mu[i], N[i], E[i], pressure.N[i], pressure.E[i], float(pressure.N[i] - N[i])/N[i] * 100.0, float(pressure.E[i] - E[i])/E[i] * 100.0)
 
 def main(argv=None):
     if argv is None:
         argv = sys.argv
 
     try:
-        opts, args = getopt.getopt(argv[1:], "hi:",
-                     ["help", "input_file="])
+        opts, args = getopt.getopt(argv[1:], "hi:eg",
+                     ["help", "input_file=","calculate_error","geneartePVTcurve"])
 
     except getopt.error, msg:
         print msg
@@ -453,9 +502,8 @@ def main(argv=None):
 
     inparams = {}
     output_on = False
-    plot_on = False
-    show_on = False
-    cmc_method = None
+    calc_error = False
+    generate = False
     for opt, arg in opts:
         if opt == '-h':
             print "python simulationVpartition.py -i input_hs.dat"
@@ -467,11 +515,18 @@ def main(argv=None):
 
         elif opt == '-o':
             output_on = True
+        elif opt == '-e':
+            calc_error = True
+        elif opt == '-g':
+            generate = True
 
     # read in the input_hs.dat
     HIS = hisFile(runs)
 
-    HIS.calcError()
+    if (calc_error):
+        HIS.calcError()
+    elif (generate):
+        HIS.generateCurve()
 
 if __name__ == '__main__':
     sys.exit(main())
