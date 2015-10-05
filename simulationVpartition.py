@@ -16,7 +16,7 @@ from scipy.optimize import curve_fit
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 
-def generatePVT(T, mu, N):
+def runEntropy(T, mu, N):
     feed_file = open('./tmp.dat', 'w')
     for i in range( len(N) ):
         feed_file.write('%f %f %f\n' % (T[i], mu[i], N[i]))
@@ -25,6 +25,20 @@ def generatePVT(T, mu, N):
 
 
     proc = subprocess.Popen("entropy.x < tmp.dat", shell=True, stdout=subprocess.PIPE)
+    feed_file.close()
+    proc.wait()
+    subprocess.Popen("ls", shell=True, stdout=subprocess.PIPE)
+    #os.remove('tmp.dat')
+
+def runEntropy2(T, mu, N):
+    feed_file = open('./tmp.dat', 'w')
+    for i in range( len(N) ):
+        feed_file.write('%f %f %f\n' % (T[i], mu[i], N[i]))
+        if i == len(N)-1:
+            feed_file.write('stop\n')
+
+
+    proc = subprocess.Popen("entropy2.x < tmp.dat", shell=True, stdout=subprocess.PIPE)
     feed_file.close()
     proc.wait()
     subprocess.Popen("ls", shell=True, stdout=subprocess.PIPE)
@@ -335,50 +349,97 @@ class hisFile(object):
 
         return
 
-    def generateCurve(self, mu_step=0.000002, mu_low=-1000, mu_len=50):
+    def generateMu(self, mu_max, T):
         """
-        Generate a PVT that covers ideal gas and high pressure
-        for micellization
+        Generate a list of mus
+        """
+        mu_step_cut = 0.02
+        temp = []
+        mu = []
+        N = []
+        mu.append(mu_max)
+        temp.append(T)
+        N.append(5)
+        for i_mu in range(1, self.mu_len):
+            temp.append(T)
+            N.append(5)
+            mu_step_temp = i_mu**4.0 * self.mu_step
+            if (mu_step_temp <= mu_step_cut):
+                mu_step_temp = 0.005 * i_mu
+
+            mu_test = mu[i_mu-1] - mu_step_temp
+            if (mu_test > self.mu_low):
+                mu.append(mu_test)
+            else:
+                mu.append(self.mu_low)
+
+        return temp, mu, N
+
+    def getMuMaxT(self):
+        """
+        Get the runs' temperature list and number of mu
         """
         T = []
         mu_max = []
-        N = []
         for i in range( len(self.runs) ):
             read_err = self.read(self.runs[i])
             T_temp = self.getT()
             mu_temp = self.getmu()
             if (T_temp not in T):
                 T.append(T_temp)
-                mu_max.append(mu_low)
+                mu_max.append(self.mu_low)
 
             for i_T in range( len(T) ):
                 if (T_temp == T[i_T]):
                     if (mu_temp > mu_max[i_T]):
                         mu_max[i_T] = mu_temp
                     break
+        return mu_max, T
 
-        mu_step_cut = 0.02
-        temp = []
-        mu = []
+
+    def generateCurve(self, entropy_version=1, mu_step=0.000002, mu_low=-1000, mu_len=50):
+        """
+        Generate a PVT that covers ideal gas and high pressure
+        for micellization
+        """
+        mu_step_start = mu_step
+        self.mu_step = mu_step
+        self.mu_low = mu_low
+        self.mu_len = mu_len
+        mu_max, T = self.getMuMaxT()
+        temp_tol = []
+        mu_tol = []
+        N_tol = []
         for i_T in range(len(T)):
-            mu.append(mu_max[i_T])
-            temp.append(T[i_T])
-            N.append(5)
-            for i_mu in range(1,mu_len):
-                temp.append(T[i_T])
-                N.append(5)
-                mu_step_temp = i_mu**4.0 * mu_step
-                if (mu_step_temp <= mu_step_cut):
-                    mu_step_temp = 0.005 * i_mu
-
-                mu_test = mu[i_mu-1] - mu_step_temp
-                if (mu_test > mu_low):
-                    mu.append(mu_test)
+            N_min = 5
+            N_max = 1
+            mu_m = mu_max[i_T]
+            # change mu untill 
+            while ( N_max < 3 and N_min > 0.1):
+                temp, mu, N = self.generateMu(mu_m, T[i_T])
+                if (entropy_version == 1):
+                    runEntropy(temp, mu, N)
                 else:
-                    mu.append(mu_low)
-                print mu_test, mu_step_temp
+                    runEntropy2(temp, mu, N)
+                pressure = partition2pressure({})
+                pressure.readPVTsimple()
+                N_max = pressure.N[0]
+                if (N_max < 3):
+                    mu_m += 0.1
 
-        generatePVT(temp, mu, N)
+                N_min = pressure.N[self.mu_len - 1]
+                if (N_min < 0.1):
+                    self.mu_step *= 2.0
+
+            self.mu_step = mu_step_start
+            temp_tol.extend(temp)
+            mu_tol.extend(mu)
+            N_tol.extend(N)
+        if (entropy_version == 1):
+            runEntropy(temp_tol, mu_tol, N_tol)
+        else:
+            runEntropy2(temp_tol, mu_tol, N_tol)
+            
 
     def calcError(self):
         """
@@ -403,7 +464,7 @@ class hisFile(object):
     
         except IOError:
             print 'could not find pvt.dat.\n Generating using entropy'
-            generatePVT(T, mu, N)
+            runEntropy(T, mu, N)
         # read pvt.dat inparams['L']=0 # doesn't matter for this, but required for class definition
         pressure = partition2pressure(inparams)
         pressure.readPVTsimple()
@@ -422,7 +483,8 @@ class partition2pressure(object):
     Read and process PVT and cmc files from the entropy program suite
     """
     def __init__(self, parms):
-        self.L = parms["L"]
+        #self.L = parms["L"]
+        self.L = 60.0
         self.vol = float(self.L * self.L * self.L)
         self.calc_conc = False
         if ("conc" in parms):
