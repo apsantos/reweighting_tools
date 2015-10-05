@@ -465,16 +465,17 @@ class hisFile(object):
         except IOError:
             print 'could not find pvt.dat.\n Generating using entropy'
             runEntropy(T, mu, N)
-        # read pvt.dat inparams['L']=0 # doesn't matter for this, but required for class definition
+        # read pvt.dat 
+        inparams = {}
         pressure = partition2pressure(inparams)
         pressure.readPVTsimple()
         # write %error
-        print 'run T mu | N_sim E_sim | N_partition E_partition | %e(N) %e(E)'
-        print '--------------------------------------------------------------'
+        print '       run      |   T      mu   |  N_sim    E_sim  |  N_part   E_part |   %e(N)   %e(E)'
+        print '----------------+---------------+------------------+------------------+-----------------'
         for i in range( len(self.runs) ):
             N_err = float(pressure.N[i] - N[i]) / N[i] * 100.0 
             E_err = float(pressure.E[i] - E[i]) / E[i] * 100.0
-            print '%s %f %f | %f %f | %f %f | %f %f' % (self.runs[i], T[i], mu[i], 
+            print '%15s | %6.3f %6.2f | %6.2f %9.3f | %6.2f %9.3f | %7.2f %7.2f' % (self.runs[i], T[i], mu[i], 
                                                         N[i], E[i], pressure.N[i], 
                                                         pressure.E[i], N_err, E_err)
 
