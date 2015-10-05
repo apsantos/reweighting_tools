@@ -1,0 +1,6 @@
+"./"  (location of ising.dat file)
+0.001  F  F   ! muincr, 2D?, read_s?
+0.001 0.4     ! tolerance, accfactor
+0.3         ! minimum accepted peak separation
+-0.0018504  320  ! smix, ncrit
+

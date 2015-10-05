@@ -1,0 +1,2 @@
+-0.013 -0.072 .01 ! mu1, mu2 smix perturbation
+0.0001 0.3 -0.015	 ! tolerance (dmu1/dmu2)_N smix0

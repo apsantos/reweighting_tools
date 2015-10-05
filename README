@@ -1,0 +1,84 @@
+Tools for performing 1-component histogram reweighting for micellizaiton
+
+Process
+-----------------
+    (0) compile *f90 files
+    (1) generate histograms using hisFile.py
+        it is a good idea to use a bash script like genHis.sh
+    (2) write input_hs.dat
+        this can also be done using a bash script like genHis.sh
+    (3) visualize the histograms using hisFile.py
+    (4) run entropy.x
+    (4) run order.x
+    (5) modify tolerance in entr2_par.dat
+    (6) run entropy2.x
+    (7) compare the partition function predicition and the runs given with simulationVpartition.py
+    (8) find the CMC and see if the ideal-gas law is obeyed using partition2pressure.py
+    (9) repeat steps 6-8
+
+Pre-analysis
+------------------------------
+    hisFile.py
+        python program that handles his*.dat files
+        get help:
+            hisFile.py -h
+        to generate hsitogram
+        usage:
+            hisFile.py -r '$NAME' -w $width -o cassandra -s $skip
+            where:
+                $NAME: is from $NAME.box1.prp1
+                $width: Energy bin width
+                $skip: # MC steps to skip
+    
+        to plot the histograms
+        usage:
+            hisFile.py -i input_hs.dat -p -s
+            "-p": to plot histograms
+            "-s": show the histograms using matplotlib
+
+Histogram reweighting programs
+------------------------------
+    entropy.f90 [must use first]
+        histogram reweighting via a single pass w/o Ferrenbery-Swendsen algorithm
+    input_hs.dat
+        list of histograms 
+        Name structure: his$NAME$ending.dat
+        line 1: #_$ending_types
+        line 2 - #_$ending_types: $ending 
+                (The program was set up for simulations that created repeat 
+                 sims that had different character ending in the filename.) 
+        line - EOF : $NAME
+    order.f90
+        Orders the files in input_hs.dat so that there is a maximum initial overlap
+    entropy2.f90
+        Ferrenbery-Swendsen algorithm program 
+    input_hs2.dat
+        Input for entropy2, made by entropy
+    entr2_par.dat
+        sets tolerance for Ferrenbery-Swendsen algorithm
+        Only need to worry about the tolerance for micellization
+    ising.dat
+        Ising model data for phase separation analysis.
+        Must be in the same folder as input_hs2.dat
+    entropy4.f90
+        Not for Micellization, but for thermodynamic phase transitions
+    entr4_par.dat
+        parameters for entropy4
+
+Post-analysis
+------------------------------
+    simulationVpartition.py
+        python program to compare the <N> and <E> from simulation histograms with the
+        partition function calculated from those histograms
+        usage:
+            python simulationVpartition.py -i input_hs.dat
+    partition2pressure.py
+        python program to calculate the Pressure versus concentration
+        usage:
+            python partition2pressure.py -c -l $L -p -o -s -m curvature
+            $L : box length [Angstrom]
+            "m" : define the method
+            "c" : concentration on the x-axis [mM], pressure [kPa] 
+            "o" : output the Pressure versus concentration
+            "p" : plot the curve
+            "s" : show the curve
