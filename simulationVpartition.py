@@ -28,7 +28,7 @@ def runEntropy(T, mu, N):
     feed_file.close()
     proc.wait()
     subprocess.Popen("ls", shell=True, stdout=subprocess.PIPE)
-    #os.remove('tmp.dat')
+    os.remove('tmp.dat')
 
 def runEntropy2(T, mu, N):
     feed_file = open('./tmp.dat', 'w')
@@ -42,7 +42,7 @@ def runEntropy2(T, mu, N):
     feed_file.close()
     proc.wait()
     subprocess.Popen("ls", shell=True, stdout=subprocess.PIPE)
-    #os.remove('tmp.dat')
+    os.remove('tmp.dat')
 
 def readRunsFile(filename, skiplines=0):
     # open the file
@@ -373,7 +373,7 @@ class hisFile(object):
             else:
                 mu.append(self.mu_low)
 
-        return temp, mu, N
+        return temp[::-1], mu[::-1], N[::-1]
 
     def getMuMaxT(self):
         """
@@ -402,6 +402,9 @@ class hisFile(object):
         Generate a PVT that covers ideal gas and high pressure
         for micellization
         """
+        max_iter = 50
+        N_min = 3
+        N_max = 15
         mu_step_start = mu_step
         self.mu_step = mu_step
         self.mu_low = mu_low
@@ -411,11 +414,9 @@ class hisFile(object):
         mu_tol = []
         N_tol = []
         for i_T in range(len(T)):
-            N_min = 5
-            N_max = 1
             mu_m = mu_max[i_T]
             # change mu untill 
-            while ( N_max < 3 and N_min > 0.1):
+            for i in range(max_iter):
                 temp, mu, N = self.generateMu(mu_m, T[i_T])
                 if (entropy_version == 1):
                     runEntropy(temp, mu, N)
@@ -423,13 +424,18 @@ class hisFile(object):
                     runEntropy2(temp, mu, N)
                 pressure = partition2pressure({})
                 pressure.readPVTsimple()
-                N_max = pressure.N[0]
-                if (N_max < 3):
+                N_mu_high = pressure.N[mu_len-1]
+                if (N_mu_high < N_min):
                     mu_m += 0.1
+                elif (N_mu_high > N_max):
+                    mu_m -= 0.5
 
-                N_min = pressure.N[self.mu_len - 1]
-                if (N_min < 0.1):
+                N_m_low = pressure.N[0]
+                if (N_m_low > 0.1):
                     self.mu_step *= 2.0
+                else:
+                    if (N_min < N_mu_high < N_max):
+                        break
 
             self.mu_step = mu_step_start
             temp_tol.extend(temp)
@@ -447,10 +453,25 @@ class hisFile(object):
         pratition function and the
         simlulation
         """
+        import shutil 
         T = []
         mu = []
         N = []
         E = []
+
+        # copy files that mave have been run from entropy2, just to save the user in case they forget
+        cp_pvt = True
+        try:
+            shutil.copyfile('./pvt.dat','./pvt_tmp.dat')
+        except IOError:
+            cp_pvt = False
+
+        cp_hs2 = True
+        try:
+            shutil.copyfile('./input_hs2.dat','./input_hs2_tmp.dat')
+        except IOError:
+            cp_hs2 = False
+
         for i in range( len(self.runs) ):
             read_err = self.read(self.runs[i])
             # find the <N> and <E> from histograms
@@ -458,13 +479,9 @@ class hisFile(object):
             mu.append(self.getmu())
             N.append(self.getNave())
             E.append(self.getEave())
+
         # run entropy with runs used to develop partition function
-        try:
-            ifile = open('./pvt.dat', 'r')
-    
-        except IOError:
-            print 'could not find pvt.dat.\n Generating using entropy'
-            runEntropy(T, mu, N)
+        runEntropy(T, mu, N)
         # read pvt.dat 
         inparams = {}
         pressure = partition2pressure(inparams)
@@ -478,6 +495,10 @@ class hisFile(object):
             print '%15s | %6.3f %6.2f | %6.2f %9.3f | %6.2f %9.3f | %7.2f %7.2f' % (self.runs[i], T[i], mu[i], 
                                                         N[i], E[i], pressure.N[i], 
                                                         pressure.E[i], N_err, E_err)
+        if (cp_hs2):
+            shutil.move('./input_hs2_tmp.dat','./input_hs2.dat')
+        if (cp_pvt):
+            shutil.move('./pvt_tmp.dat','./pvt.dat')
 
 class partition2pressure(object):
     """
