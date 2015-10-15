@@ -401,8 +401,10 @@ do ipart = min_part,max_part
 	if (dens(ipart)>1e-30) write (24,'(i5,g12.3)') ipart,dens(ipart)
 enddo
 
-write (*,'(A,f7.3,A,f9.2,A,f4.0,A,f5.2,A,f8.2,A,f8.3,A,f8.3)') '  <N> =',avgnum,'  <E>/<N> =',ene_liq/avgnum,'; Frac. < ',nmid,'=',nbelow,'; nliq =',nliq/(1.-nbelow),'; ngas=',ngas/nbelow,' lnZ=',ln_Z
-write (24,'(A,f7.3,A,f8.3,A,f4.0,A,f5.2,A,f9.3,A,f9.4,A,f9.4,3h */)') '/* <N> =',avgnum,'  <E>/<N> =',ene_liq/avgnum,'; Frac. < ',nmid,'=',nbelow,'; nliq =',nliq/(1.-nbelow),'; ngas=',ngas/nbelow,' lnZ=',ln_Z
+write (*,'(A,f7.3,A,f9.2,A,f4.0,A,f5.2,A,f8.2,A,f8.3,A,f8.3)') '  <N> =',avgnum,'  <E>/<N> =',ene_liq/avgnum &
+                ,'; Frac. < ',nmid,'=',nbelow,'; nliq =',nliq/(1.-nbelow),'; ngas=',ngas/nbelow,' lnZ=',ln_Z
+write (24,'(A,f7.3,A,f8.3,A,f4.0,A,f5.2,A,f9.3,A,f9.4,A,f9.4,3h */)') '/* <N> =',avgnum,'  <E>/<N> =',ene_liq/avgnum &
+                        ,'; Frac. < ',nmid,'=',nbelow,'; nliq =',nliq/(1.-nbelow),'; ngas=',ngas/nbelow,' lnZ=',ln_Z
 close(24)
 !write (29,'(A,f7.3,A,f8.3,A,f4.0,A,f5.3,A,f9.3,A,f9.4,A,f9.4,3h */)') '/* <N> =',avgnum,'  <E>/<N> =',ene_liq/avgnum,'; Frac. < ',nmid,'=',nbelow,'; nliq =',nliq/(1.-nbelow),'; ngas=',ngas/nbelow,' lnZ=',ln_Z
 !close(29)
@@ -411,7 +413,7 @@ write (28,'(9g13.5)') 1/beta1,mu1,avgnum,ene_liq,ln_Z,ln_Zliq,ln_Zgas
 
 open (24,file='crit.dat')
 write (24,'(A,f8.4,A,f10.4)') '/* T=',1/beta1,'; mu=',mu1
-write (24,'(A,f8.4,A,f8.4,A,20A5,3h *//3h /*,600A,3h *//3h /*,900A,3h */)') '/* T=',1/beta1,'; mu=',mu1,'; Suffixes and Files = '&
+write (24,'(A,f8.4,A,f8.4,A,20A5,3h *//3h /*,600A,3h *//3h /*,1000A,3h */)') '/* T=',1/beta1,'; mu=',mu1,'; Suffixes and Files = '&
 	,(suffix(isuffix),isuffix=1,nsuffix),(trim(filename(ifile)),ifile=1,nfiles),' */'
 p_l = 0.
 avg_x = 0.
@@ -587,11 +589,15 @@ do while (1./beta1<tmax+.00001.and.1./beta1>tmin-.00001.and.iter<=maxiter)
 				enddo
 			enddo
 			if (1/beta1 < 50) then				
-				write (*,'(A,f7.4,A,I3,A,f10.4,A,f10.3,A,f10.4)') '  T=',1/beta1,' Iter =',iter,'; Mu=',mu1,'; nliq =',nliq/(1.-nbelow),'; ngas=',ngas/nbelow
-				write (25,'(f8.5,F11.5,f10.3,f10.4,2g12.4,2f11.4)') 1/beta1,mu1, nliq/(1.-nbelow),ngas/nbelow, ene_liq/nliq,ene_gas/ngas,ln_Zliq,ln_Zgas
+				write (*,'(A,f7.4,A,I3,A,f10.4,A,f10.3,A,f10.4)') '  T=',1/beta1,' Iter =',iter,'; Mu=',mu1 &
+                                                                 ,'; nliq =',nliq/(1.-nbelow),'; ngas=',ngas/nbelow
+				write (25,'(f8.5,F11.5,f10.3,f10.4,2g12.4,2f11.4)') 1/beta1,mu1, nliq/(1.-nbelow),ngas/nbelow &
+                                                                  , ene_liq/nliq,ene_gas/ngas,ln_Zliq,ln_Zgas
 			else
-				write (*,'(A,f7.2,A,I3,A,f10.4,A,f10.3,A,f10.4)') '  T=',1/beta1,' Iter =',iter,'; Mu=',mu1,'; nliq =',nliq/(1.-nbelow),'; ngas=',ngas/nbelow
-				write (25,'(f7.2,F9.2,f10.3,f10.4,f11.3,3f11.4)') 1/beta1,mu1, nliq/(1.-nbelow),ngas/nbelow, ene_liq/nliq,ene_gas/ngas,ln_Zliq,ln_Zgas
+				write (*,'(A,f7.2,A,I3,A,f10.4,A,f10.3,A,f10.4)') '  T=',1/beta1,' Iter =',iter,'; Mu=',mu1 &
+                                                                 ,'; nliq =',nliq/(1.-nbelow),'; ngas=',ngas/nbelow
+				write (25,'(f7.2,F9.2,f10.3,f10.4,f11.3,3f11.4)') 1/beta1,mu1, nliq/(1.-nbelow),ngas/nbelow &
+                                                                , ene_liq/nliq,ene_gas/ngas,ln_Zliq,ln_Zgas
 			endif
 		endif
 	endif

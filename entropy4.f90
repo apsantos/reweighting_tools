@@ -68,6 +68,7 @@ real trial_vec(nopt_dim)		! factors for initial search in Tcrit
 real funk
 external funk
 real zfactor	! auxiliary variable in calculation of weight and Z
+character(len=32) :: nfile_fmt
 
 open (1,file='entr4_par.dat')
 read (1,*) (trial_vec(i),i=1,nopt_dim)
@@ -226,7 +227,9 @@ enddo	! over isuffix (no ident)
 enddo	! over ifile
 
 
-write (*,'(a,<nsuffix+nfiles>a,a,8f8.3/<nsuffix*nfiles>f8.3)') '  Weights (optimized in entropy2!): ', &
+write(nfile_fmt, '(a, i0, a, i0, a)') '(A,', nsuffix+nfiles, 'A,A,8f8.3/',nsuffix*nfiles,'f8.3)'
+!write (*,'(a,<nsuffix+nfiles>a,a,8f8.3/<nsuffix*nfiles>f8.3)') '  Weights (optimized in entropy2!): ', &
+write (*,nfile_fmt) '  Weights (optimized in entropy2!): ', &
 	( trim(filename(ifile)),ifile=1,nfiles ), ( trim(suffix(isuffix)),isuffix=1,nsuffix),&
 	' =',((weight(ifile,isuffix),isuffix=1,nsuffix),ifile=1,nfiles)
 
@@ -325,8 +328,9 @@ do ipart = min_part,max_part
 enddo
 
 open (24,file='crit.dat')
-write (24,'(A,f8.4,A,g14.8,A,g10.4,A,20A5,3h *//3h /*,50A,3h *//3h /*,50A,3h */)') '/* T=',1/beta1,'; mu=',mu1,'; smix=',smix,'; Suffixes and Files = '&
-	,(suffix(isuffix),isuffix=1,nsuffix),(trim(filename(ifile)),ifile=1,nfiles),' */'
+write (24,'(A,f8.4,A,g14.8,A,g10.4,A,20A5,3h *//3h /*,50A,3h *//3h /*,50A,3h */)') '/* T=' &
+             ,1/beta1,'; mu=',mu1,'; smix=',smix,'; Suffixes and Files = '&
+             ,(suffix(isuffix),isuffix=1,nsuffix),(trim(filename(ifile)),ifile=1,nfiles),' */'
 
 p_l = 0.
 avg_x = 0.
@@ -471,7 +475,10 @@ EXTERNAL funk
 
         return
       endif
-      if (iter.ge.ITMAX) pause 'ITMAX exceeded in amoeba'
+      if (iter.ge.ITMAX) then
+        write(*,*) 'ITMAX exceeded in amoeba, type [enter] to continue'
+        read (*,*) 
+      endif
       iter=iter+2
       ytry=amotry(p,y,psum,mp,np,ndim,funk,ihi,-1.0)
       if (ytry.le.y(ilo)) then
