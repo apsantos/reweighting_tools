@@ -84,10 +84,16 @@ class hisFile(object):
         return self.temp
 
     def getEave(self):
-        return np.mean(self.E)
+        ave = 0
+        for i in range(len(self.histogram[0,:])):
+            ave += self.E[i] * sum(self.histogram[:,i]) / float(self.his_sum)
+        return ave
 
     def getNave(self):
-        return np.mean(self.N)
+        ave = 0
+        for iN in range(len(self.histogram[:,0])):
+            ave += iN * sum(self.histogram[iN,:]) / float(self.his_sum)
+        return ave
 
     def getNmaxEmin(self, filename):
         # open the file
@@ -248,10 +254,12 @@ class hisFile(object):
         # read in the data
         for line in ifile:
             data = line.strip().split()
+            # if it is a line with the N and starting E line
             if (N_line):
                 i_N = int(data[0])
                 E_bin_min = float(data[2])
                 n_E_bin = int(data[1])
+                # if it is a line with the N and starting E line
                 for i_E_bin in range(n_E_bin):
                     i_E = E_bin_min + (i_E_bin * self.his_width)
                     #i_E = E_min + ((n_E_bin - i_E_bin - 1) * self.his_width)
@@ -276,7 +284,8 @@ class hisFile(object):
                     i_E_bin = 0
                     N_line = True
 
-        self.histogram = his
+        self.histogram = his[:i_N,:]
+        self.his_sum = sum(sum(self.histogram))
         N_int = np.array(N_int)
         E_int = np.array(E_int)
         #self.histogram = coo_matrix( (his, (N_int, E_int)), shape=(max(N_int)+1, max(E_int)+1) ).toarray()
@@ -491,7 +500,7 @@ class hisFile(object):
         print '----------------+---------------+------------------+------------------+-----------------'
         for i in range( len(self.runs) ):
             N_err = float(pressure.N[i] - N[i]) / N[i] * 100.0 
-            E_err = float(pressure.E[i] - E[i]) / E[i] * 100.0
+            E_err = float(pressure.E[i] - E[i]) / (E[i]+1E-8) * 100.0
             print '%15s | %6.3f %6.2f | %6.2f %9.3f | %6.2f %9.3f | %7.2f %7.2f' % (self.runs[i], T[i], mu[i], 
                                                         N[i], E[i], pressure.N[i], 
                                                         pressure.E[i], N_err, E_err)
@@ -590,7 +599,7 @@ def main(argv=None):
     generate = False
     for opt, arg in opts:
         if opt == '-h':
-            print "python simulationVpartition.py -i input_hs.dat"
+            print "python simulationVpartition.py -i input_hs.dat -o -e -g"
             return 1
 
         if opt == '-i':
@@ -610,7 +619,7 @@ def main(argv=None):
     if (calc_error):
         HIS.calcError()
     elif (generate):
-        HIS.generateCurve()
+        HIS.generateCurve(2)
 
 if __name__ == '__main__':
     sys.exit(main())
