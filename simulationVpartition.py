@@ -7,7 +7,7 @@ Institution: Princeton University
 Purpose: Compare the energy and N from the partition function in "pvt.dat" file output from entropy or entropy2 with that used in simulations
 
 """
-import os, sys, getopt
+import os, sys, argparse
 import subprocess
 import numpy as np
 import math as ma
@@ -71,10 +71,14 @@ class hisFile(object):
     """
     Read and plot histogram(s) as a COO sparse matrix
     """
-    def __init__(self, file_roots):
+    def __init__(self, file_roots, temperature):
         # can only take 7
         self.runs = file_roots
         self.temp_list = []
+        if (temperature):
+            self.temp_calc = temperature
+        else:
+            self.temp_calc = []
         return
 
     def getmu(self):
@@ -394,9 +398,16 @@ class hisFile(object):
             read_err = self.read(self.runs[i])
             T_temp = self.getT()
             mu_temp = self.getmu()
+                
             if (T_temp not in T):
-                T.append(T_temp)
-                mu_max.append(self.mu_low)
+                if (self.temp_calc):
+                    for i_T in self.temp_calc:
+                        if (abs(T_temp - i_T) / float(i_T) < 0.05):
+                            T.append(T_temp)
+                            mu_max.append(self.mu_low)
+                else:
+                    T.append(T_temp)
+                    mu_max.append(self.mu_low)
 
             for i_T in range( len(T) ):
                 if (T_temp == T[i_T]):
@@ -431,15 +442,15 @@ class hisFile(object):
                     runEntropy(temp, mu, N)
                 else:
                     runEntropy2(temp, mu, N)
-                pressure = partition2pressure({})
-                pressure.readPVTsimple()
-                N_mu_high = pressure.N[mu_len-1]
+                part = partition()
+                part.readPVTsimple()
+                N_mu_high = part.N[mu_len-1]
                 if (N_mu_high < N_min):
                     mu_m += 0.1
                 elif (N_mu_high > N_max):
                     mu_m -= 0.5
 
-                N_m_low = pressure.N[0]
+                N_m_low = part.N[0]
                 if (N_m_low > 0.1):
                     self.mu_step *= 2.0
                 else:
@@ -492,51 +503,26 @@ class hisFile(object):
         # run entropy with runs used to develop partition function
         runEntropy(T, mu, N)
         # read pvt.dat 
-        inparams = {}
-        pressure = partition2pressure(inparams)
-        pressure.readPVTsimple()
+        part = partition()
+        part.readPVTsimple()
         # write %error
         print '       run      |   T      mu   |  N_sim    E_sim  |  N_part   E_part |   %e(N)   %e(E)'
         print '----------------+---------------+------------------+------------------+-----------------'
         for i in range( len(self.runs) ):
-            N_err = float(pressure.N[i] - N[i]) / N[i] * 100.0 
-            E_err = float(pressure.E[i] - E[i]) / (E[i]+1E-8) * 100.0
+            N_err = float(part.N[i] - N[i]) / N[i] * 100.0 
+            E_err = float(part.E[i] - E[i]) / (E[i]+1E-8) * 100.0
             print '%15s | %6.3f %6.2f | %6.2f %9.3f | %6.2f %9.3f | %7.2f %7.2f' % (self.runs[i], T[i], mu[i], 
-                                                        N[i], E[i], pressure.N[i], 
-                                                        pressure.E[i], N_err, E_err)
+                                                        N[i], E[i], part.N[i], 
+                                                        part.E[i], N_err, E_err)
         if (cp_hs2):
             shutil.move('./input_hs2_tmp.dat','./input_hs2.dat')
         if (cp_pvt):
             shutil.move('./pvt_tmp.dat','./pvt.dat')
 
-class partition2pressure(object):
+class partition(object):
     """
-    Read and process PVT and cmc files from the entropy program suite
+    Read the PVT file from the entropy program suite
     """
-    def __init__(self, parms):
-        #self.L = parms["L"]
-        self.L = 60.0
-        self.vol = float(self.L * self.L * self.L)
-        self.calc_conc = False
-        if ("conc" in parms):
-            self.calc_conc = True
-            self.kB = 1.38064852E-23 # J K-1
-            self.convert_kPa = 1.E27 # J / A^3 to kPa
-            self.A3_to_m3 = 1.E-30 # A^3 to m^3
-            self.Na = 6.022140857E23 # 1/ mol
-            self.gas_const = 0.0083144621 # kJ / (K mol)
-        self.calc_rho = False
-        if ("mass" in parms):
-            self.calc_rho = True
-            self.mass = parms["mass"]
-            self.kB = 1.38064852E-23 # J K-1
-            self.convert_kPa = 1.E27 # J / A^3 to kPa
-            self.A3_to_cm3 = 1.E-24 # A^3 to m^3
-            self.Na = 6.022140857E23 # 1/ mol
-        self.calc_phi = False
-        if ("J" in parms):
-            self.calc_phi = True
-            self.J = parms["J"]
 
     def getE(self):
         return self.E
@@ -579,47 +565,38 @@ class partition2pressure(object):
     
         pvt_file.close()
 
-
 def main(argv=None):
-    if argv is None:
-        argv = sys.argv
+    parser = argparse.ArgumentParser(description='Analyze simulation histograms '
+                                    'and compare or generate a partition function. ')
+    parser.add_argument("-i","--input_file", metavar='inFile', type=str,
+                   help='File containing list of historgram file runnames '
+                        '(e.g. input_hs.dat.')
+    parser.add_argument("-e","--error", action="store_true",
+                   help='Calculate the error in the N and E by the '
+                        'partition function compared to the simulation')
+    parser.add_argument("-g","--generate", metavar='entropy version', 
+                        type=int, choices=[1,2],
+                   help='Generate the pvt.dat file for CMC calculation, '
+                        'can either use the partiton function generated '
+                        'by entropy[1,2].x.  Assumes 2 if none given.')
+    parser.add_argument("-t","--temperature", type=float, nargs="+",
+                   help='temperature you want to pvt to be calculated at '
+                        'assumed to be all those in the input_file.')
 
-    try:
-        opts, args = getopt.getopt(argv[1:], "hi:eg",
-                     ["help", "input_file=","calculate_error","geneartePVTcurve"])
-
-    except getopt.error, msg:
-        print msg
-        print "for help use --help"
-        return 2
-
-    inparams = {}
-    output_on = False
-    calc_error = False
-    generate = False
-    for opt, arg in opts:
-        if opt == '-h':
-            print "python simulationVpartition.py -i input_hs.dat -o -e -g"
-            return 1
-
-        if opt == '-i':
-            runs_filename = arg
-            runs = readRunsFile(runs_filename)
-
-        elif opt == '-o':
-            output_on = True
-        elif opt == '-e':
-            calc_error = True
-        elif opt == '-g':
-            generate = True
+    if (parser.parse_args().input_file):
+        runs = readRunsFile(parser.parse_args().input_file)
+    else:
+        print 'Must give input file e.g.:'
+        print '-i input_hs.dat'
+        return
 
     # read in the input_hs.dat
-    HIS = hisFile(runs)
+    HIS = hisFile(runs, parser.parse_args().temperature)
 
-    if (calc_error):
+    if (parser.parse_args().error):
         HIS.calcError()
-    elif (generate):
-        HIS.generateCurve(2)
+    elif (parser.parse_args().generate):
+        HIS.generateCurve(parser.parse_args().generate)
 
 if __name__ == '__main__':
     sys.exit(main())
