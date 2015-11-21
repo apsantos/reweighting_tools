@@ -8,7 +8,7 @@ Purpose: Calculate the pressure from the resulting "pvt.dat" file output from en
 
 	The top two def sections are called from the main section which is below
 """
-import os, sys, getopt
+import os, sys, argparse
 import numpy as np
 import math as ma
 from scipy import interpolate
@@ -236,29 +236,49 @@ class partition2pressure(object):
     """
     Read and process PVT and cmc files from the entropy program suite
     """
-    def __init__(self, parms):
-        self.L = parms["L"]
-        self.vol = float(self.L * self.L * self.L)
-        self.calc_conc = False
-        if ("conc" in parms):
-            self.calc_conc = True
-            self.kB = 1.38064852E-23 # J K-1
-            self.convert_kPa = 1.E27 # J / A^3 to kPa
-            self.A3_to_m3 = 1.E-30 # A^3 to m^3
-            self.Na = 6.022140857E23 # 1/ mol
-            self.gas_const = 0.0083144621 # kJ / (K mol)
+    def __init__(self):
+        self.kB = 1.38064852E-23 # J K-1
+        self.convert_kPa = 1.E27 # J / A^3 to kPa
+        self.A3_to_m3 = 1.E-30 # A^3 to m^3
+        self.Na = 6.022140857E23 # 1/ mol
+        self.gas_const = 0.0083144621 # kJ / (K mol)
         self.calc_rho = False
-        if ("mass" in parms):
+        self.colors = ['red', 'blue', 'green', 'magenta', 'cyan', 
+                       'yellow', 'black', 'darkgoldenrod','firebrick', 
+                       'purple', 'burlywood', 'chartreuse', 'red', 
+                       'blue', 'green', 'magenta', 'cyan']
+
+    def addParser(self, parser):
+        """
+        Get relevant values from an argparse parser
+        """
+        self.vol = 1.0
+        n_sides = len(parser.parse_args().box_length)
+        for i in range(3):
+            if n_sides == 1:
+                self.vol *= parser.parse_args().box_length[0]
+            elif n_sides == 3:
+                self.vol *= parser.parse_args().box_length[i]
+        if (n_sides not in [1,3]):
+            print 'You can only give 1 or 3 entries for the box size'
+            
+        self.calc_conc = parser.parse_args().concentration
+
+        self.calc_rho = False
+        if (parser.parse_args().density):
             self.calc_rho = True
-            self.mass = parms["mass"]
-            self.kB = 1.38064852E-23 # J K-1
-            self.convert_kPa = 1.E27 # J / A^3 to kPa
-            self.A3_to_cm3 = 1.E-24 # A^3 to m^3
-            self.Na = 6.022140857E23 # 1/ mol
+            self.mass = parser.parse_args().density
+
         self.calc_phi = False
-        if ("J" in parms):
+        if (parser.parse_args().num_beads):
             self.calc_phi = True
-            self.J = parms["J"]
+            self.J = parser.parse_args().num_beads
+
+        self.show = parser.parse_args().show_plot
+        self.save = parser.parse_args().save_plot
+        self.legend = parser.parse_args().legend
+        self.show_gas = parser.parse_args().show_gas
+        self.cmc_method = parser.parse_args().cmc_method
 
     def readPVT(self):
         pwd = os.getcwd()
@@ -321,6 +341,28 @@ class partition2pressure(object):
         pvt_file.close()
         return params
 
+    def calculateCMC(self):
+        if (self.cmc_method == 'spline' or self.cmc_method == 'finite'):
+            self.calcCMC2ndD()
+
+        elif (self.cmc_method == 'zero'):
+            self.calcCMC2ndDIntercept()
+    
+        elif (self.cmc_method == 'curvature'):
+            self.calcCMCcurvature()
+    
+        elif (self.cmc_method == 'intercept'):
+            self.calcCMCslope()
+
+        elif (self.cmc_method == 'percent'):
+            self.calcCMCslope()
+
+        elif (self.cmc_method == 'sigmoid'):
+            self.calcCMCsigmoidIntegral()
+
+        else :
+            print 'CMCs are not being calcualted use the -m flag.'
+    
     def getTempRange(self):
         pvt_name = 'pvt.dat'
         # get the ln of partition function
@@ -411,7 +453,7 @@ class partition2pressure(object):
             for i in range( len(self.pressure[:,itemp]) ):
                 self.pressure[i, itemp] -= b_max
 
-    def calcCMCslope(self, cmcParams, method='intersept'):
+    def calcCMCslope(self):
         self.cmc = []
         self.cmc_s = []
         self.cmc_slope = []
@@ -443,7 +485,7 @@ class partition2pressure(object):
                     m_s_max = m_s
                     b_s_max = b_s
 
-            if (method == 'percent'):
+            if (self.cmc_method == 'percent'):
                 x = self.x[6:len(self.x)-3, itemp]
                 y = self.pressure[6:len(self.x)-3, itemp]
                 x_spl, y_spl, y_spl_d1, y_spl_d2 = getSpline(x, y, 1000)
@@ -455,7 +497,7 @@ class partition2pressure(object):
                 self.cmc.append( x_per )
                 self.cmc_s.append( x_spl[2] - x_spl[0] )
                 
-            elif (method == 'intercept'):
+            elif (self.cmc_method == 'intercept'):
                 print b_min, m_min
                 self.cmc.append( abs( b_min / (m_gas - m_min)) )
                 self.cmc_s.append( self.cmc[itemp] * 
@@ -468,7 +510,7 @@ class partition2pressure(object):
 
         return self.cmc, self.cmc_s
 
-    def calcCMC2ndDIntercept(self, cmcParams, method):
+    def calcCMC2ndDIntercept(self):
         self.cmc = []
         self.cmc_s = []
         self.cmc_slope = []
@@ -477,7 +519,7 @@ class partition2pressure(object):
         for itemp in range(len(self.temp)):
             x = self.x[6:len(self.x)-3, itemp]
             y = self.pressure[6:len(self.x)-3, itemp]
-            i_cmc, i_cmc_e = zero2ndDerivativeIntercept(x, y, method, False)
+            i_cmc, i_cmc_e = zero2ndDerivativeIntercept(x, y, self.cmc_method, False)
             self.cmc.append(i_cmc)
             self.cmc_s.append(i_cmc_e)
             cmc_index = min(range(len(self.x[:,itemp])), key=lambda i: abs(self.x[i,itemp] - self.cmc[itemp]))
@@ -485,14 +527,13 @@ class partition2pressure(object):
         
         return self.cmc, self.cmc_s
     
-    def calcCMCsigmoidIntegral(self, cmcParams, n_pass=2):
+    def calcCMCsigmoidIntegral(self, n_pass=2):
         self.cmc = []
         self.cmc_s = []
         self.cmc_slope = []
         self.cmc_intercept = []
         self.mu_cmc = []
         for itemp in range(len(self.temp)):
-            print self.temp[itemp]
             n_points = len(self.x)
             x = self.x[6:n_points-3, itemp]
             y = self.pressure[6:n_points-3, itemp]
@@ -518,8 +559,8 @@ class partition2pressure(object):
             #popt, pcov = curve_fit(sigmoidIntegral, x_spl, y_spl)
                 
             y_sig = sigmoidIntegral(x_spl, popt[0], popt[1], popt[2], popt[3])
-            for i in range(len(y_sig)):
-                print x_spl[i], y_sig[i]
+            #for i in range(len(y_sig)):
+            #    print x_spl[i], y_sig[i]
             
             self.cmc.append(popt[2])
             self.cmc_s.append(np.sqrt(np.diag(pcov))[2])
@@ -551,7 +592,7 @@ class partition2pressure(object):
 
         return self.cmc, self.cmc_s
 
-    def calcCMCcurvature(self, cmcParams):
+    def calcCMCcurvature(self):
         self.cmc = []
         self.cmc_s = []
         self.cmc_slope = []
@@ -566,14 +607,14 @@ class partition2pressure(object):
         
         return self.cmc, self.cmc_s
     
-    def calcCMC2ndD(self, cmcParams, method):
+    def calcCMC2ndD(self):
         self.cmc = []
         self.cmc_s = []
         self.cmc_slope = []
         self.cmc_intercept = []
         self.mu_cmc = []
         for itemp in range(len(self.temp)):
-            i_cmc, i_p, i_d2, i_cmc_e = max2ndDerivative(self.x[6:len(self.x)-3, itemp], self.pressure[6:len(self.x)-3, itemp], method, False)
+            i_cmc, i_p, i_d2, i_cmc_e = max2ndDerivative(self.x[6:len(self.x)-3, itemp], self.pressure[6:len(self.x)-3, itemp], self.cmc_method, False)
             self.cmc.append(i_cmc)
             self.cmc_s.append(i_cmc_e)
             cmc_index = min(range(len(self.x[:,itemp])), key=lambda i: abs(self.x[i,itemp] - self.cmc[itemp]))
@@ -581,7 +622,7 @@ class partition2pressure(object):
         
         return self.cmc, self.cmc_s
     
-    def write(self, parms):
+    def write(self):
         cmc_file = open("cmc_part.dat", 'w')
         if (self.calc_phi):
             cmc_file.write("T   phi_cmc d_phi_cmc    mu_cmc\n")
@@ -607,14 +648,13 @@ class partition2pressure(object):
             mu_file.close()
         return
     
-    def plot(self, pvtParams, show, method, plot_xy=True, legend=True):
+    def plot(self):
         fig = plt.figure()
-        colors = ['red', 'blue', 'green', 'magenta', 'cyan', 'yellow', 'black', 'darkgoldenrod','firebrick', 'purple', 'burlywood', 'chartreuse', 'red', 'blue', 'green', 'magenta', 'cyan']
         handles = []
         for itemp in range(len(self.temp)):
             x = self.x[:, itemp]
             y = self.pressure[:, itemp]
-            plt.plot(x, y, '-', c=colors[itemp], label='T = '+str(self.temp[itemp]))
+            plt.plot(x, y, '-', c=self.colors[itemp], label='T = '+str(self.temp[itemp]))
         
            
             if (self.calc_rho):
@@ -624,14 +664,14 @@ class partition2pressure(object):
             else:
                 convert = 1.0
 
-            if (method == 'intercept'): 
+            if (self.cmc_method == 'intercept'): 
                 x = np.array([0.0, self.cmc[itemp]])
                 plt.plot([self.cmc[itemp], self.cmc[itemp]], x * convert, '--k')
                 x_inter = np.array([self.cmc[itemp], max(self.x[:, itemp])])
                 plt.plot(x_inter, self.cmc_slope[itemp]*x_inter + self.cmc_intercept[itemp], 'k')
                 plt.plot(x, x*convert, '-k', lw=2.1)
-            elif (method != None):
-                if (plot_xy):
+            elif (self.cmc_method != None):
+                if (self.show_gas):
                     x = np.array([0.0, self.cmc[itemp]])
                     plt.plot(x, convert * x, '-k', lw=2.1)
                     plt.plot([self.cmc[itemp], self.cmc[itemp]], convert * x, '--k')
@@ -642,7 +682,7 @@ class partition2pressure(object):
                 #plt.plot(x, self.cmc*np.ones((len(x),1)), 'k')
 
     
-        if (legend):
+        if (self.legend):
             border = plt.legend( numpoints=1, prop={'size':12}, loc=2)
             border.draw_frame(False)
         if (self.calc_phi):
@@ -658,100 +698,53 @@ class partition2pressure(object):
             plt.xlabel("N$_{tot}$",fontsize=20)
             plt.ylabel("ln$\Omega$",fontsize=20)
         
-        if (show):
+        if (self.show):
             plt.show()
 
-        fig.savefig('pvt.png', format='png',dpi=100)
+        if (self.save):
+            fig.savefig('pvt.png', format='png',dpi=100)
         return
 
 
 def main(argv=None):
-    if argv is None:
-        argv = sys.argv
+    parser = argparse.ArgumentParser(description='Calculate the pressure from'
+                                    ' the resulting "pvt.dat" file output from'
+                                    '  entropy or entropy2.')
+    parser.add_argument("-p","--save_plot", action="store_true",
+                   help='Save a figure ploting the pressure versus x')
+    parser.add_argument("-s","--show_plot", action="store_true",
+                   help='Show the plot.')
+    parser.add_argument("-g","--show_gas", action="store_true",
+                   help='Show the ideal-gas law limiting curve')
+    parser.add_argument("-l","--legend", action="store_true",
+                   help='Show the legend of temperature curves')
+    parser.add_argument("-c","--concentration", action="store_true",
+                   help='Plot versus concentration [mM]')
+    parser.add_argument("-r","--density", type=float,
+                   help='Plot versus density [g/cm3] must give the molar mass')
+    parser.add_argument("-o","--output", action="store_true",
+                   help='Output files for the cmc and P vs N vs mu')
+    parser.add_argument("-j","--num_beads", type=int,
+                   help='Number of beads for lattice surfactant.')
+    parser.add_argument("-m","--cmc_method", type=str, 
+                        choices=['finite', 'zero', 'spline', 'intercept',
+                                 'curvature', 'sigmoid', 'percent'],
+                   help='Method for calculating the CMC')
+    parser.add_argument("-b","--box_length", type=float, nargs="+",
+                   help='Simulation box length, can be 1 or 3 numbers')
 
-    try:
-        opts, args = getopt.getopt(argv[1:], "hb:j:opsm:r:clx",
-                     ["help", "box_length=", "num_beads=", "output", "plot", "show plot",
-                       "maxmethod=","mass=", "concentration"])
+    pressure = partition2pressure()
 
-    except getopt.error, msg:
-        print msg
-        print "for help use --help"
-        return 2
-
-    inparams = {}
-    output_on = False
-    plot_on = False
-    show_on = False
-    cmc_method = None
-    plot_xy = True
-    legend = False
-    for opt, arg in opts:
-        if opt == '-h':
-            print "partition2pressure.py -b <box_length> -j <n_beads> [optional] -p -s -o -m <method> -r <molecular_mass> -c -l -x"
-            print "methods: intercept, spline, finite, zero, curvature and sigmoid"
-            return 1
-
-        elif opt == '-b':
-            inparams["L"] = float(arg)
-
-        elif opt == '-c':
-            inparams["conc"] = True
-
-        elif opt == '-r':
-            inparams["mass"] = float(arg)
-
-        elif opt == '-j':
-            inparams["J"] = int(arg)
-
-        elif opt == '-o':
-            output_on = True
-
-        elif opt == '-p':
-            plot_on = True
-
-        elif opt == '-s':
-            show_on = True
-
-        elif opt == '-m':
-            cmc_method = arg
-
-        elif opt == '-x':
-            plot_xy = False
-
-        elif opt == '-l':
-            legend = True
-
-    pressure = partition2pressure(inparams)
-
-    PVTparams = pressure.readPVT()
+    pressure.addParser(parser)
+    pressure.readPVT()
     pressure.convert()
+    pressure.calculateCMC()
 
-    #CMCparams = pressure.readCMC()
-    CMCparams = {}
-    if (cmc_method == 'spline' or cmc_method == 'finite'):
-        CMCparams["cmc"], CMCparams["cmc_s"] = pressure.calcCMC2ndD(PVTparams, cmc_method)
+    if (parser.parse_args().output):
+        pressure.write()
 
-    elif (cmc_method == 'zero'):
-        CMCparams["cmc"], CMCparams["cmc_s"] = pressure.calcCMC2ndDIntercept(PVTparams, cmc_method)
-
-    elif (cmc_method == 'curvature'):
-        CMCparams["cmc"], CMCparams["cmc_s"] = pressure.calcCMCcurvature(PVTparams)
-
-    elif (cmc_method == 'intercept'):
-        CMCparams["cmc"], CMCparams["cmc_s"] = pressure.calcCMCslope(PVTparams, cmc_method)
-    elif (cmc_method == 'percent'):
-        CMCparams["cmc"], CMCparams["cmc_s"] = pressure.calcCMCslope(PVTparams, cmc_method)
-    elif (cmc_method == 'sigmoid'):
-        CMCparams["cmc"], CMCparams["cmc_s"] = pressure.calcCMCsigmoidIntegral(PVTparams)
-    else :
-        print 'CMCs are not being calcualted use the -m flag.'
-
-    if (output_on):
-        pressure.write(PVTparams)
-
-    if (plot_on):
-        pressure.plot(PVTparams, show_on, cmc_method, plot_xy, legend)
+    if (parser.parse_args().save_plot or parser.parse_args().show_plot):
+        pressure.plot()
 
 if __name__ == '__main__':
     sys.exit(main())
