@@ -376,7 +376,7 @@ class hisFile(object):
         for i_mu in range(1, self.mu_len):
             temp.append(T)
             N.append(5)
-            mu_step_temp = i_mu**4.0 * self.mu_step
+            mu_step_temp = i_mu**2.5 * self.mu_step
             if (mu_step_temp <= mu_step_cut):
                 mu_step_temp = 0.005 * i_mu
 
@@ -422,9 +422,11 @@ class hisFile(object):
         Generate a PVT that covers ideal gas and high pressure
         for micellization
         """
-        max_iter = 50
-        N_min = 3
-        N_max = 15
+        max_iter = 100
+        N_low_min = 0.005
+        N_low_max = 0.02
+        N_hi_min = 4
+        N_hi_max = 10
         mu_step_start = mu_step
         self.mu_step = mu_step
         self.mu_low = mu_low
@@ -445,16 +447,18 @@ class hisFile(object):
                 part = partition()
                 part.readPVTsimple()
                 N_mu_high = part.N[mu_len-1]
-                if (N_mu_high < N_min):
-                    mu_m += 0.1
-                elif (N_mu_high > N_max):
-                    mu_m -= 0.5
+                if (N_mu_high < N_hi_min):
+                    mu_m += 0.05
+                elif (N_mu_high > N_hi_max):
+                    mu_m -= 0.1
 
                 N_m_low = part.N[0]
-                if (N_m_low > 0.1):
+                if (N_m_low > N_low_max):
                     self.mu_step *= 2.0
+                elif (N_m_low < N_low_min):
+                    self.mu_step /= 1.5
                 else:
-                    if (N_min < N_mu_high < N_max):
+                    if (N_hi_min < N_mu_high < N_hi_max):
                         break
 
             self.mu_step = mu_step_start
@@ -466,7 +470,6 @@ class hisFile(object):
         else:
             runEntropy2(temp_tol, mu_tol, N_tol)
             
-
     def calcError(self):
         """
         Calculate the relative error between the calculated
