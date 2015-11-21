@@ -397,11 +397,11 @@ class partition2pressure(object):
                 y = self.pressure[i:i+5, itemp]
                 # y = mx + b
                 m, b, m_s, b_s, r = linFit(x, y)
-                if (m_gas*1.0 >= m > m_max):
+                if (m_gas*1.1 >= m > m_max):
                 #if (m > m_max):
                     m_max = m
                     b_max = b
-            print m_max
+            print ('max slope(T=%6.2f) = %f' % (self.temp[itemp], m_max))
             if (m_max == 0):
                 sys.exit("The maximum slope in your system is either "
                          "greater than "+str(m_gas)+" or less than 0.\n"
@@ -582,7 +582,7 @@ class partition2pressure(object):
         return self.cmc, self.cmc_s
     
     def write(self, parms):
-        cmc_file = open("cmc_APS.dat", 'w')
+        cmc_file = open("cmc_part.dat", 'w')
         if (self.calc_phi):
             cmc_file.write("T   phi_cmc d_phi_cmc    mu_cmc\n")
         elif (self.calc_rho or self.calc_conc):
@@ -607,7 +607,7 @@ class partition2pressure(object):
             mu_file.close()
         return
     
-    def plot(self, pvtParams, show, method):
+    def plot(self, pvtParams, show, method, plot_xy=True, legend=True):
         fig = plt.figure()
         colors = ['red', 'blue', 'green', 'magenta', 'cyan', 'yellow', 'black', 'darkgoldenrod','firebrick', 'purple', 'burlywood', 'chartreuse', 'red', 'blue', 'green', 'magenta', 'cyan']
         handles = []
@@ -617,28 +617,34 @@ class partition2pressure(object):
             plt.plot(x, y, '-', c=colors[itemp], label='T = '+str(self.temp[itemp]))
         
            
+            if (self.calc_rho):
+                convert = self.temp[itemp] * self.kB 
+            elif (self.calc_conc):
+                convert = self.temp[itemp] #* self.gas_const
+            else:
+                convert = 1.0
+
             if (method == 'intercept'): 
                 x = np.array([0.0, self.cmc[itemp]])
-                plt.plot([self.cmc[itemp], self.cmc[itemp]], [0, self.cmc[itemp]], '--k')
+                plt.plot([self.cmc[itemp], self.cmc[itemp]], x * convert, '--k')
                 x_inter = np.array([self.cmc[itemp], max(self.x[:, itemp])])
                 plt.plot(x_inter, self.cmc_slope[itemp]*x_inter + self.cmc_intercept[itemp], 'k')
-                plt.plot(x, x, '-k', lw=2.1)
+                plt.plot(x, x*convert, '-k', lw=2.1)
             elif (method != None):
-                if (self.calc_rho):
-                    convert = self.temp[itemp] * self.kB 
-                elif (self.calc_conc):
-                    convert = self.temp[itemp] #* self.gas_const
+                if (plot_xy):
+                    x = np.array([0.0, self.cmc[itemp]])
+                    plt.plot(x, convert * x, '-k', lw=2.1)
+                    plt.plot([self.cmc[itemp], self.cmc[itemp]], convert * x, '--k')
                 else:
-                    convert = 1.0
-                x = np.array([0.0, self.cmc[itemp]])
-                plt.plot(x, convert * x, '-k', lw=2.1)
-                plt.plot([self.cmc[itemp], self.cmc[itemp]], convert * x, '--k')
+                    x = np.array([0.0, self.cmc[itemp]*1.5])
+                    plt.plot([self.cmc[itemp], self.cmc[itemp]], convert * x, '--k')
                 #x = np.array([self.cmc[itemp], max(self.x[:, itemp])])
                 #plt.plot(x, self.cmc*np.ones((len(x),1)), 'k')
 
     
-        border = plt.legend( numpoints=1, prop={'size':12}, loc=2)
-        border.draw_frame(False)
+        if (legend):
+            border = plt.legend( numpoints=1, prop={'size':12}, loc=2)
+            border.draw_frame(False)
         if (self.calc_phi):
             plt.xlabel("$\phi_{tot}$",fontsize=20)
             plt.ylabel("$\Pi$",fontsize=20)
@@ -664,7 +670,7 @@ def main(argv=None):
         argv = sys.argv
 
     try:
-        opts, args = getopt.getopt(argv[1:], "hl:j:opsm:r:c",
+        opts, args = getopt.getopt(argv[1:], "hb:j:opsm:r:clx",
                      ["help", "box_length=", "num_beads=", "output", "plot", "show plot",
                        "maxmethod=","mass=", "concentration"])
 
@@ -678,14 +684,16 @@ def main(argv=None):
     plot_on = False
     show_on = False
     cmc_method = None
+    plot_xy = True
+    legend = False
     for opt, arg in opts:
         if opt == '-h':
-            print "partition2pressure.py -l <box_length> -j <n_beads> [optional] -p -s -o -m <method> -r <molecular_mass> -c"
+            print "partition2pressure.py -b <box_length> -j <n_beads> [optional] -p -s -o -m <method> -r <molecular_mass> -c -l -x"
             print "methods: intercept, spline, finite, zero, curvature and sigmoid"
             return 1
 
-        elif opt == '-l':
-            inparams["L"] = int(arg)
+        elif opt == '-b':
+            inparams["L"] = float(arg)
 
         elif opt == '-c':
             inparams["conc"] = True
@@ -707,6 +715,12 @@ def main(argv=None):
 
         elif opt == '-m':
             cmc_method = arg
+
+        elif opt == '-x':
+            plot_xy = False
+
+        elif opt == '-l':
+            legend = True
 
     pressure = partition2pressure(inparams)
 
@@ -737,7 +751,7 @@ def main(argv=None):
         pressure.write(PVTparams)
 
     if (plot_on):
-        pressure.plot(PVTparams, show_on, cmc_method)
+        pressure.plot(PVTparams, show_on, cmc_method, plot_xy, legend)
 
 if __name__ == '__main__':
     sys.exit(main())
