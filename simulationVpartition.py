@@ -454,7 +454,7 @@ class hisFile(object):
 
                 N_m_low = part.N[0]
                 if (N_m_low > N_low_max):
-                    self.mu_step *= 2.0
+                    self.mu_step *= 3.0
                 elif (N_m_low < N_low_min):
                     self.mu_step /= 1.5
                 else:
@@ -513,10 +513,10 @@ class hisFile(object):
         print '----------------+---------------+------------------+------------------+-----------------'
         for i in range( len(self.runs) ):
             N_err = float(part.N[i] - N[i]) / N[i] * 100.0 
-            E_err = float(part.E[i] - E[i]) / (E[i]+1E-8) * 100.0
-            print '%15s | %6.3f %6.2f | %6.2f %9.3f | %6.2f %9.3f | %7.2f %7.2f' % (self.runs[i], T[i], mu[i], 
-                                                        N[i], E[i], part.N[i], 
-                                                        part.E[i], N_err, E_err)
+            E_err = float(part.E[i]*part.N[i] - E[i]) / (E[i]+1E-8) * 100.0
+            print ('%15s | %6.3f %6.2f | %6.2f %9.3f | %6.2f %9.3f | %7.2f %7.2f' % 
+                  (self.runs[i], T[i], mu[i], N[i], E[i], 
+                  part.N[i], part.E[i]*part.N[i], N_err, E_err))
         if (cp_hs2):
             shutil.move('./input_hs2_tmp.dat','./input_hs2.dat')
         if (cp_pvt):
