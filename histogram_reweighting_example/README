@@ -1,0 +1,23 @@
+Example for doing 1-component histogram reweghting using entropy.x
+H4T4 nonionic lattice surfactant as an example.
+Reproducing some results from:
+    Floriano et al. Langmuir, 1999
+    (paper in this folder)
+
+his*dat files
+    These files contain a tally of the number of times a certain number of
+    particles (N) and energy (E) are visited during a simulation.
+
+    Format
+    N <Nenergy> <EnergyBinMin>
+    <Histogram_EbinMin> <Histogram_EbinMin+1> ... <Histogram_EbinMin+7>
+    <Histogram_EbinMin+8> <Histogram_EbinMin+9> ... <Histogram_EbinMin+14>
+    ...
+    
+    where           N     : number of particles
+                <Nenergy> : Number of energy bins that are occupied for N particles
+           <EnergyBinMin> : The value of the lowest energy bin occupied by N particles
+    <Histogram_EbinMin+i> : The number of times this energy bin and N particles
+                            happened in the simulation
+
+The README in the above directory should guide the use of these histograms
