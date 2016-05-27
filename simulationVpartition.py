@@ -414,6 +414,19 @@ class hisFile(object):
                     if (mu_temp > mu_max[i_T]):
                         mu_max[i_T] = mu_temp
                     break
+    
+        for T_calc in self.temp_calc:
+            not_in_array = True
+            for i_T in T:
+                if (abs(i_T - T_calc) / float(T_calc) < 0.05):
+                    not_in_array = False
+                    break
+
+            if not_in_array:
+                print "The temperature in the input (", str(T_calc), ") is not used in any simulation run given to entropy. It may not be as accurate."
+                T.append(T_calc)
+                mu_max.append(self.mu_low)
+
         return mu_max, T
 
 
@@ -423,10 +436,10 @@ class hisFile(object):
         for micellization
         """
         max_iter = 100
-        N_low_min = 0.005
-        N_low_max = 0.02
-        N_hi_min = 4
-        N_hi_max = 10
+        N_low_min = 0.05
+        N_low_max = 0.1
+        N_hi_min = 50
+        N_hi_max = 80
         mu_step_start = mu_step
         self.mu_step = mu_step
         self.mu_low = mu_low
@@ -450,7 +463,7 @@ class hisFile(object):
                 if (N_mu_high < N_hi_min):
                     mu_m += 0.05
                 elif (N_mu_high > N_hi_max):
-                    mu_m -= 0.1
+                    mu_m -= 0.5
 
                 N_m_low = part.N[0]
                 if (N_m_low > N_low_max):
