@@ -247,6 +247,10 @@ class partition2pressure(object):
                        'yellow', 'black', 'darkgoldenrod','firebrick', 
                        'purple', 'burlywood', 'chartreuse', 'red', 
                        'blue', 'green', 'magenta', 'cyan']
+        # including the points very near min or max N/density can confuse
+        # the fitting process, so we as  a shorter set
+        self.begin_fit = 10
+        self.end_fit = 3
 
     def addParser(self, parser):
         """
@@ -439,7 +443,7 @@ class partition2pressure(object):
                 y = self.pressure[i:i+5, itemp]
                 # y = mx + b
                 m, b, m_s, b_s, r = linFit(x, y)
-                if (m_gas*1.1 >= m > m_max):
+                if (m_gas*1.01 >= m > m_max):
                 #if (m > m_max):
                     m_max = m
                     b_max = b
@@ -517,8 +521,9 @@ class partition2pressure(object):
         self.cmc_intercept = []
         self.mu_cmc = []
         for itemp in range(len(self.temp)):
-            x = self.x[6:len(self.x)-3, itemp]
-            y = self.pressure[6:len(self.x)-3, itemp]
+            n_points = len(self.x)
+            x = self.x[self.begin_fit:n_points-self.end_fit, itemp]
+            y = self.pressure[self.begin_fit:n_points-self.end_fit, itemp]
             i_cmc, i_cmc_e = zero2ndDerivativeIntercept(x, y, self.cmc_method, False)
             self.cmc.append(i_cmc)
             self.cmc_s.append(i_cmc_e)
@@ -535,8 +540,8 @@ class partition2pressure(object):
         self.mu_cmc = []
         for itemp in range(len(self.temp)):
             n_points = len(self.x)
-            x = self.x[6:n_points-3, itemp]
-            y = self.pressure[6:n_points-3, itemp]
+            x = self.x[self.begin_fit:n_points-self.end_fit, itemp]
+            y = self.pressure[self.begin_fit:n_points-self.end_fit, itemp]
             x_spl, y_spl, y_spl_d1, y_spl_d2 = getSpline(x, y)
             funky=True
             f_int = 6
@@ -568,8 +573,8 @@ class partition2pressure(object):
             self.mu_cmc.append( self.mu[cmc_index,itemp] )
             if (False):
                 fig = plt.figure()
-                x = self.x[6:n_points-3, itemp]
-                y = self.pressure[6:n_points-3, itemp]
+                x = self.x[self.begin_fit:n_points-self.end_fit, itemp]
+                y = self.pressure[self.begin_fit:n_points-self.end_fit, itemp]
                 plt.plot(x_spl, y_sig, 'g', label='Sigmoid fit')
                 plt.plot(x_spl, y_spl, 'r', label='Spline fit')
                 plt.plot(x, y, 'og', label='Histogram rewieghting data')
@@ -599,7 +604,8 @@ class partition2pressure(object):
         self.cmc_intercept = []
         self.mu_cmc = []
         for itemp in range(len(self.temp)):
-            i_cmc, i_cmc_e = maxCurvature(self.x[6:len(self.x)-3, itemp], self.pressure[6:len(self.x)-3, itemp], False)
+            n_points = len(self.x)
+            i_cmc, i_cmc_e = maxCurvature(self.x[self.begin_fit:n_points-self.end_fit, itemp], self.pressure[self.begin_fit:n_points-self.end_fit, itemp], False)
             self.cmc.append(i_cmc)
             self.cmc_s.append(i_cmc_e)
             cmc_index = min(range(len(self.x[:,itemp])), key=lambda i: abs(self.x[i,itemp] - self.cmc[itemp]))
@@ -614,7 +620,8 @@ class partition2pressure(object):
         self.cmc_intercept = []
         self.mu_cmc = []
         for itemp in range(len(self.temp)):
-            i_cmc, i_p, i_d2, i_cmc_e = max2ndDerivative(self.x[6:len(self.x)-3, itemp], self.pressure[6:len(self.x)-3, itemp], self.cmc_method, False)
+            n_points = len(self.x)
+            i_cmc, i_p, i_d2, i_cmc_e = max2ndDerivative(self.x[self.begin_fit:n_points-self.end_fit, itemp], self.pressure[self.begin_fit:n_points-self.end_fit, itemp], self.cmc_method, False)
             self.cmc.append(i_cmc)
             self.cmc_s.append(i_cmc_e)
             cmc_index = min(range(len(self.x[:,itemp])), key=lambda i: abs(self.x[i,itemp] - self.cmc[itemp]))
@@ -698,6 +705,10 @@ class partition2pressure(object):
             plt.xlabel("N$_{tot}$",fontsize=20)
             plt.ylabel("ln$\Omega$",fontsize=20)
         
+        plt.gcf().subplots_adjust(bottom=0.12)
+        plt.gcf().subplots_adjust(left=0.11)
+        plt.gcf().subplots_adjust(right=0.96)
+        plt.gcf().subplots_adjust(top=0.96)
         if (self.show):
             plt.show()
 
