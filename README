@@ -2,16 +2,16 @@ Tools for performing 1-component histogram reweighting for micellizaiton
 
 Process
 -----------------
-    (0) compile *f90 files
+    (0) compile *f90 files (ifort filename.f90 filename.x)
     (1) generate histograms using hisFile.py
         it is a good idea to use a bash script like genHis.sh
     (2) write input_hs.dat
         this can also be done using a bash script like genHis.sh
     (3) visualize the histograms using hisFile.py
-    (4) run entropy.x
-    (4) run order.x
+    (4) run entropy.x  (/FILELOCATION/entropy.x)
+    (4) run order.x    (/FILELOCATION/order.x)
     (5) modify tolerance in entr2_par.dat
-    (6) run entropy2.x
+    (6) run entropy2.x (/FILELOCATION/entropy2.x)
     (7) compare the partition function predicition and the runs given with simulationVpartition.py
     (8) find the CMC and see if the ideal-gas law is obeyed using partition2pressure.py
     (9) repeat steps 6-8
@@ -22,7 +22,7 @@ Pre-analysis
         python program that handles his*.dat files
         get help:
             hisFile.py -h
-        to generate hsitogram
+        to generate histogram
         usage:
             hisFile.py -r '$NAME' -w $width -o cassandra -s $skip
             where:
@@ -40,6 +40,7 @@ Histogram reweighting programs
 ------------------------------
     entropy.f90 [must use first]
         histogram reweighting via a single pass w/o Ferrenbery-Swendsen algorithm
+        generates input_hs2.dat
     input_hs.dat
         list of histograms 
         Name structure: his$NAME$ending.dat
@@ -59,7 +60,7 @@ Histogram reweighting programs
         Only need to worry about the tolerance for micellization
     ising.dat
         Ising model data for phase separation analysis.
-        Must be in the same folder as input_hs2.dat
+        MUST be in the same folder as input_hs2.dat
     entropy4.f90
         Not for Micellization, but for thermodynamic phase transitions
     entr4_par.dat
@@ -80,5 +81,5 @@ Post-analysis
             "m" : define the method
             "c" : concentration on the x-axis [mM], pressure [kPa] 
             "o" : output the Pressure versus concentration
-            "p" : plot the curve
+            "p" : plot the curve (pvt.png)
             "s" : show the curve
