@@ -379,7 +379,10 @@ class partition2pressure(object):
         line = pvt_file.readline()
 
         data = line.strip().split()
-        temp = [float(data[0])]
+	try:
+	    temp = [float(data[0])]
+	except IndexError:
+	    sys.exit('you forgot to generate pvt.dat')
         t_range = [1]
         t_count = 0
 
@@ -429,7 +432,8 @@ class partition2pressure(object):
     
     def convert(self):
         # keep track of how many temepratures there are
-        m_gas = 1.0
+        m_gas = 2.0
+	self.itemp_skip = []
         
         for itemp in range(len(self.temp)):
             if (self.calc_conc):
@@ -449,9 +453,12 @@ class partition2pressure(object):
                     b_max = b
             print ('max slope(T=%6.2f) = %f' % (self.temp[itemp], m_max))
             if (m_max == 0):
-                sys.exit("The maximum slope in your system is either "
-                         "greater than "+str(m_gas)+" or less than 0.\n"
-                         "This does not make sense for calculating cmcs.")
+		self.itemp_skip.append( itemp )
+                print "The maximum slope in your system is either "
+		print "greater than "+str(m_gas)+" or less than 0."
+                print "This does not make sense for calculating cmcs."
+		b_max = b
+		#continue
                 
             # make sure that the pressure obeys the IGEOS at the limit
             for i in range( len(self.pressure[:,itemp]) ):
@@ -466,11 +473,14 @@ class partition2pressure(object):
         percentage = 0.1
         m_gas = 1.0
         for itemp in range(len(self.temp)):
+	    if (itemp in self.itemp_skip): continue
+
             if (self.calc_conc):
                 m_gas = self.temp[itemp] #* self.gas_const
             elif (self.calc_rho):
                 m_gas = self.temp[itemp] * self.kB
             m_min = m_gas
+            b_min = 0
             m_max = 0
             for i in range(int( len(self.pressure) - 5 )):
                 x = self.x[i:i+5, itemp]
@@ -483,7 +493,7 @@ class partition2pressure(object):
                     m_s_min = m_s
                     b_s_min = b_s
     
-                elif (1.0 >= m > m_max):
+                elif (1.1*m_gas >= m > m_max):
                     m_max = m
                     b_max = b
                     m_s_max = m_s
@@ -502,7 +512,10 @@ class partition2pressure(object):
                 self.cmc_s.append( x_spl[2] - x_spl[0] )
                 
             elif (self.cmc_method == 'intercept'):
-                print b_min, m_min
+		if m_min == m_gas:
+		    self.itemp_skip.append(itemp)
+		    print 'could not find the intercept'
+		    return
                 self.cmc.append( abs( b_min / (m_gas - m_min)) )
                 self.cmc_s.append( self.cmc[itemp] * 
                                   ( (b_s_min * 100)**2.0 + (m_s_min * 100)**2.0)**0.5 )
@@ -521,6 +534,8 @@ class partition2pressure(object):
         self.cmc_intercept = []
         self.mu_cmc = []
         for itemp in range(len(self.temp)):
+	    if (itemp in self.itemp_skip): continue
+
             n_points = len(self.x)
             x = self.x[self.begin_fit:n_points-self.end_fit, itemp]
             y = self.pressure[self.begin_fit:n_points-self.end_fit, itemp]
@@ -539,6 +554,8 @@ class partition2pressure(object):
         self.cmc_intercept = []
         self.mu_cmc = []
         for itemp in range(len(self.temp)):
+	    if (itemp in self.itemp_skip): continue
+
             n_points = len(self.x)
             x = self.x[self.begin_fit:n_points-self.end_fit, itemp]
             y = self.pressure[self.begin_fit:n_points-self.end_fit, itemp]
@@ -604,6 +621,8 @@ class partition2pressure(object):
         self.cmc_intercept = []
         self.mu_cmc = []
         for itemp in range(len(self.temp)):
+	    if (itemp in self.itemp_skip): continue
+
             n_points = len(self.x)
             i_cmc, i_cmc_e = maxCurvature(self.x[self.begin_fit:n_points-self.end_fit, itemp], self.pressure[self.begin_fit:n_points-self.end_fit, itemp], False)
             self.cmc.append(i_cmc)
@@ -620,6 +639,8 @@ class partition2pressure(object):
         self.cmc_intercept = []
         self.mu_cmc = []
         for itemp in range(len(self.temp)):
+	    if (itemp in self.itemp_skip): continue
+
             n_points = len(self.x)
             i_cmc, i_p, i_d2, i_cmc_e = max2ndDerivative(self.x[self.begin_fit:n_points-self.end_fit, itemp], self.pressure[self.begin_fit:n_points-self.end_fit, itemp], self.cmc_method, False)
             self.cmc.append(i_cmc)
@@ -638,6 +659,8 @@ class partition2pressure(object):
         else:
             cmc_file.write("T   N_cmc d_N_cmc    mu_cmc\n")
         for itemp in range(len(self.temp)):
+	    if (itemp in self.itemp_skip): continue
+
             cmc_file.write("%f %10.8f %10.8f %10.8f\n" % ( self.temp[itemp], 
                                                     self.cmc[itemp], self.cmc_s[itemp],
                                                     self.mu_cmc[itemp] ))
@@ -663,6 +686,7 @@ class partition2pressure(object):
             y = self.pressure[:, itemp]
             plt.plot(x, y, '-', c=self.colors[itemp], label='T = '+str(self.temp[itemp]))
         
+	    if (itemp in self.itemp_skip): continue
            
             if (self.calc_rho):
                 convert = self.temp[itemp] * self.kB 
