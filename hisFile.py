@@ -76,7 +76,7 @@ class cassandraFile(object):
 
     def readInp(self):
         # open the file
-        filename = self.runname + '.inp'
+        filename = self.runname + '.log'
 
         try:
             ifile = open('./' + filename, 'r')
@@ -106,8 +106,12 @@ class cassandraFile(object):
                         box_str = ifile.readline().strip().split()
                         self.box = []
                         self.box.append(float( box_str[0] ) )
-                        self.box.append(float( box_str[1] ) )
-                        self.box.append(float( box_str[2] ) )
+			if (len(box_str) == 1):
+                            self.box.append(float( box_str[0] ) )
+                            self.box.append(float( box_str[0] ) )
+			else:
+                            self.box.append(float( box_str[1] ) )
+                            self.box.append(float( box_str[2] ) )
             if not line: break
         ifile.close()
                 
@@ -151,15 +155,14 @@ class cassandraFile(object):
         i_line = 0
         for line in ifile:
             data = line.strip().split()
-            if (i_line >= start_line):
-
+            if i_line >= start_line and i_line < 500000:
                 if (data[0] != "#"):
-                    self.nsteps.append( int(data[0]) )
-                    self.nmols.append( int(float(data[n_collumn[0]])) )
-                    #for ispecies in n_collumn[1:]:
-                    #    self.nmols[len(self.nmols) - 1] += int(float(data[ispecies]))
+                    	self.nsteps.append( int(data[0]) )
+                    	self.nmols.append( int(float(data[n_collumn[0]])) )
+                    	#for ispecies in n_collumn[1:]:
+                    	#    self.nmols[len(self.nmols) - 1] += int(float(data[ispecies]))
 
-                    self.energy.append( float(data[e_collumn]) )
+                    	self.energy.append( float(data[e_collumn]) )
 
             i_line += 1
 
