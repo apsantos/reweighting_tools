@@ -366,7 +366,7 @@ class hisFile(object):
         """
         Generate a list of mus
         """
-        mu_step_cut = 0.02
+        mu_step_cut = 0.0002
         temp = []
         mu = []
         N = []
@@ -376,14 +376,18 @@ class hisFile(object):
         for i_mu in range(1, self.mu_len):
             temp.append(T)
             N.append(5)
-            mu_step_temp = i_mu**2.5 * self.mu_step
+            mu_step_temp = i_mu**1.1 * self.mu_step
+            #mu_step_temp = i_mu**1.1 * self.mu_step
             if (mu_step_temp <= mu_step_cut):
-                mu_step_temp = 0.005 * i_mu
+                mu_step_temp = 0.0005 * i_mu
+                #mu_step_temp = 0.0001 * i_mu
 
             mu_test = mu[i_mu-1] - mu_step_temp
+            #mu_test = mu[i_mu-1] - 0.001
             if (mu_test > self.mu_low):
                 mu.append(mu_test)
             else:
+                #mu.append(mu_test)
                 mu.append(self.mu_low)
 
         return temp[::-1], mu[::-1], N[::-1]
@@ -430,16 +434,16 @@ class hisFile(object):
         return mu_max, T
 
 
-    def generateCurve(self, entropy_version=1, mu_step=0.000002, mu_low=-1000, mu_len=50):
+    def generateCurve(self, entropy_version=1, mu_step=0.000002, mu_low=-0.05, mu_len=30, N_hi=[60, 130]):
         """
         Generate a PVT that covers ideal gas and high pressure
         for micellization
         """
         max_iter = 100
-        N_low_min = 0.05
+        N_low_min = 0.01
         N_low_max = 0.1
-        N_hi_min = 50
-        N_hi_max = 80
+        N_hi_min = N_hi[0]
+        N_hi_max = N_hi[1]
         mu_step_start = mu_step
         self.mu_step = mu_step
         self.mu_low = mu_low
@@ -461,15 +465,15 @@ class hisFile(object):
                 part.readPVTsimple()
                 N_mu_high = part.N[mu_len-1]
                 if (N_mu_high < N_hi_min):
-                    mu_m += 0.05
+                    mu_m += 0.001
                 elif (N_mu_high > N_hi_max):
-                    mu_m -= 0.5
+                    mu_m -= 0.001
 
                 N_m_low = part.N[0]
                 if (N_m_low > N_low_max):
-                    self.mu_step *= 3.0
+                    self.mu_step *= 2.0
                 elif (N_m_low < N_low_min):
-                    self.mu_step /= 1.5
+                    self.mu_step /= 1.25
                 else:
                     if (N_hi_min < N_mu_high < N_hi_max):
                         break
@@ -612,7 +616,11 @@ def main(argv=None):
     if (parser.parse_args().error):
         HIS.calcError()
     elif (parser.parse_args().generate):
-        HIS.generateCurve(parser.parse_args().generate)
+	mu_step_size = 0.0001
+	mu_min = -0.1
+	mu_length = 50
+	N_max_range = [50, 80]
+        HIS.generateCurve(parser.parse_args().generate, mu_step_size, mu_min, mu_length, N_max_range)
 
 if __name__ == '__main__':
     sys.exit(main())
