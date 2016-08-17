@@ -115,7 +115,7 @@ class cassandraFile(object):
             if not line: break
         ifile.close()
                 
-    def readPrp(self, start_line=0):
+    def readPrp(self, start_line=0, end_line=1000000):
         # open the file
         filename = self.runname + '.box1.prp1'
 
@@ -163,6 +163,8 @@ class cassandraFile(object):
                     	#    self.nmols[len(self.nmols) - 1] += int(float(data[ispecies]))
 
                     	self.energy.append( float(data[e_collumn]) )
+
+            if (i_line >= end_line): break
 
             i_line += 1
 
@@ -264,6 +266,11 @@ class hisFile(object):
             self.start_line = parser.parse_args().start_line
         else:
             self.start_line = 0
+
+        if (parser.parse_args().end_line):
+            self.end_line = parser.parse_args().start_line
+        else:
+            self.end_line = 100000000000000
 
         if (parser.parse_args().show_legend):
             self.show_legend = parser.parse_args().show_legend
@@ -628,6 +635,8 @@ def main(argv=None):
                    help='Histogram energy width [kJ/mol]')
     parser.add_argument("-s","--start_line", type=int,
                    help='Starting line to operate on property file.')
+    parser.add_argument("-f","--end_line", type=int,
+                   help='Ending line to operate on property file.')
     parser.add_argument("-j","--num_beads", type=int,
                    help='Number of beads for lattice surfactant.')
 

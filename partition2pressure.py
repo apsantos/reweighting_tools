@@ -332,7 +332,7 @@ class partition2pressure(object):
             self.pressure = lnZ * self.J / self.vol
         elif (self.calc_conc):
             self.x = self.N / (self.vol * self.Na * self.A3_to_m3)
-            self.pressure = lnZ * self.temp[t_count] * self.convert_kPa / self.vol /self.Na * 1000.0
+            self.pressure = lnZ * self.temp[t_count] / (self.vol * self.Na * self.A3_to_m3) #* self.gas_const # temp [=] kJ/mol
             #self.pressure = lnZ * self.kB * self.temp[t_count] * self.convert_kPa / self.vol
         elif (self.calc_rho):
             self.x = self.N * self.mass / (self.vol * self.Na * self.A3_to_cm3)
@@ -437,7 +437,7 @@ class partition2pressure(object):
         
         for itemp in range(len(self.temp)):
             if (self.calc_conc):
-                m_gas = self.temp[itemp] #* self.gas_const
+                m_gas = self.temp[itemp] #* self.gas_const*1000
             elif (self.calc_rho):
                 m_gas = self.temp[itemp] * self.kB
             m_min = m_gas
@@ -451,7 +451,7 @@ class partition2pressure(object):
                 #if (m > m_max):
                     m_max = m
                     b_max = b
-            print ('max slope(T=%6.2f) = %f' % (self.temp[itemp], m_max))
+            print ('max slope(T =%6.2f) = %f' % (self.temp[itemp], m_max))
             if (m_max == 0):
 		self.itemp_skip.append( itemp )
                 print "The maximum slope in your system is either "
@@ -602,7 +602,7 @@ class partition2pressure(object):
                     plt.ylabel("$\Pi$",fontsize=20)
                 elif (self.calc_conc):
                     plt.xlabel("$\\rho_{tot}$[mM]",fontsize=20)
-                    plt.ylabel("$p$[kPa]",fontsize=20)
+                    plt.ylabel("$P$[kPa]",fontsize=20)
                 elif (self.calc_rho):
                     plt.xlabel("$\\rho_{tot}$[g/cm$^3$]",fontsize=20)
                     plt.ylabel("$p$[kPa]",fontsize=20)
@@ -661,7 +661,7 @@ class partition2pressure(object):
         for itemp in range(len(self.temp)):
 	    if (itemp in self.itemp_skip): continue
 
-            cmc_file.write("%f %10.8f %10.8f %10.8f\n" % ( self.temp[itemp], 
+            cmc_file.write("%f %10.8f %10.8f %10.8f\n" % ( self.temp[itemp]/0.008314, 
                                                     self.cmc[itemp], self.cmc_s[itemp],
                                                     self.mu_cmc[itemp] ))
             mu_file = open("PVphiVmu" + str(self.temp[itemp]) + ".dat", 'w')
@@ -721,10 +721,10 @@ class partition2pressure(object):
             plt.ylabel("$\Pi$",fontsize=20)
         elif (self.calc_conc):
             plt.xlabel("$\\rho_{tot}$[mM]",fontsize=20)
-            plt.ylabel("$p$[kPa]",fontsize=20)
+            plt.ylabel("$P$[kPa]",fontsize=20)
         elif (self.calc_rho):
             plt.xlabel("$\\rho_{tot}$[g/cm$^3$]",fontsize=20)
-            plt.ylabel("$p$[kPa]",fontsize=20)
+            plt.ylabel("$P$[kPa]",fontsize=20)
         else:
             plt.xlabel("N$_{tot}$",fontsize=20)
             plt.ylabel("ln$\Omega$",fontsize=20)
