@@ -430,16 +430,15 @@ class hisFile(object):
         return mu_max, T
 
 
-    def generateCurve(self, entropy_version=1, mu_step=0.000002, mu_low=-1000, mu_len=50):
+    def generateCurve(self, entropy_version=1, mu_step=0.000002, mu_len=80, N_low_min=0.05, N_hi_max=60):
         """
         Generate a PVT that covers ideal gas and high pressure
         for micellization
         """
         max_iter = 100
-        N_low_min = 0.05
-        N_low_max = 0.1
-        N_hi_min = 50
-        N_hi_max = 80
+        mu_low = -1000
+        N_low_max = N_low_min*1.1
+        N_hi_min = N_hi_max*0.9
         mu_step_start = mu_step
         self.mu_step = mu_step
         self.mu_low = mu_low
@@ -612,7 +611,12 @@ def main(argv=None):
     if (parser.parse_args().error):
         HIS.calcError()
     elif (parser.parse_args().generate):
-        HIS.generateCurve(parser.parse_args().generate)
+        mu_step = 0.000002
+        mu_low = -1000
+        mu_len = 80
+        N_low = 0.1
+        N_max = 40
+        HIS.generateCurve(parser.parse_args().generate, mu_step, mu_len, N_low, N_max)
 
 if __name__ == '__main__':
     sys.exit(main())
