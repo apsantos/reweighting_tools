@@ -11,7 +11,7 @@ Process
     (4) run entropy.x  (/FILELOCATION/entropy.x)
     (4) run order.x    (/FILELOCATION/order.x)
     (5) modify tolerance in entr2_par.dat
-    (6) run entropy2.x (/FILELOCATION/entropy2.x)
+    (6) run entropy2.x (/FILELOCATION/entropy2.x) (it generates prediction of partition function in pvt file)
     (7) compare the partition function predicition and the runs given with simulationVpartition.py
     (8) find the CMC and see if the ideal-gas law is obeyed using partition2pressure.py
     (9) repeat steps 6-8
