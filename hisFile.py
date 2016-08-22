@@ -301,6 +301,26 @@ class hisFile(object):
             self.inFile = inputFile(self.runs)
             self.inFile.data_type = parser.parse_args().write_his
             if (parser.parse_args().write_his == 'dat'):
+                if (not parser.parse_args().e_collumn):
+                    print 'Need to specify:' 
+                    print '  e_collumn'
+                    return -1
+                elif (not parser.parse_args().n_collumn):
+                    print 'Need to specify:' 
+                    print '  n_collumn'
+                    return -1
+                elif (not parser.parse_args().temperature):
+                    print 'Need to specify:' 
+                    print '  temperature'
+                    return -1
+                elif (not parser.parse_args().chem_pot):
+                    print 'Need to specify:' 
+                    print '  chem_pot'
+                    return -1
+                elif (not parser.parse_args().box):
+                    print 'Need to specify:' 
+                    print '  box'
+                    return -1
                 self.inFile.e_collumn = parser.parse_args().e_collumn
                 self.inFile.n_collumn = parser.parse_args().n_collumn
                 self.inFile.temperature = parser.parse_args().temperature/0.0083144621
@@ -701,7 +721,10 @@ def main(argv=None):
                    help='box length')
 
     HIS = hisFile()
-    HIS.addParser(parser)
+    err = HIS.addParser(parser)
+    if (err < 0): 
+        print 'Exiting program'
+        return
 
     if (parser.parse_args().write_his):
         HIS.write()
