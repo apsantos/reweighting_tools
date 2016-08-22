@@ -46,9 +46,10 @@ def readRunsFile(filename, skiplines=0):
         
     return runs
 
-class cassandraFile(object):
+class inputFile(object):
     """
     Read Cassandra *box.prp file
+    Or a regular .dat file
     """
     def __init__(self, file_root):
         self.runname = file_root[0]
@@ -58,8 +59,11 @@ class cassandraFile(object):
         self.width = float(width)
 
     def read(self, start_line=0):
-        self.readInp()
-        error = self.readPrp(start_line)
+        if (self.data_type == "cassandra"):
+            self.readInp()
+            error = self.readPrp(start_line)
+        elif (self.data_type == "dat"):
+            error = self.readData(start_line)
         return error
 
     def getNspecies(self):
@@ -173,6 +177,44 @@ class cassandraFile(object):
             return 3
         return 0
 
+    def readData(self, start_line=0, end_line=1000000):
+        # open the file
+        filename = self.runname + '.dat'
+
+        try:
+            ifile = open('./' + filename, 'r')
+
+        except IOError:
+            print('cannot find: %s' % filename)
+            return 1
+        
+        # read header information
+        ifile.readline()
+        header = ifile.readline().strip().split()
+
+        self.nsteps = []
+        self.nmols = []
+        self.energy = []
+        i_line = 0
+        for line in ifile:
+            data = line.strip().split()
+            if i_line >= start_line and i_line < 500000:
+                if (data[0] != "#"):
+                    	self.nmols.append( int(float(data[self.n_collumn])) )
+                    	#for ispecies in n_collumn[1:]:
+                    	#    self.nmols[len(self.nmols) - 1] += int(float(data[ispecies]))
+
+                    	self.energy.append( float(data[self.e_collumn]) )
+
+            if (i_line >= end_line): break
+
+            i_line += 1
+
+        if (i_line < (start_line - 10)):
+            print ('starting line too high, there are only %s lines' % i_line)
+            return 3
+        return 0
+
     def generateHis(self):
         """ There are 2 types of data lines, the 1st has the:
             N (number of particles)
@@ -255,9 +297,16 @@ class hisFile(object):
         else:
             print 'No input files given!'
 
-        if (parser.parse_args().write_his in ["cassandra"]):
-            if (parser.parse_args().write_his == "cassandra"):
-                self.inFile = cassandraFile(self.runs)
+        if (parser.parse_args().write_his):
+            self.inFile = inputFile(self.runs)
+            self.inFile.data_type = parser.parse_args().write_his
+            if (parser.parse_args().write_his == 'dat'):
+                self.inFile.e_collumn = parser.parse_args().e_collumn
+                self.inFile.n_collumn = parser.parse_args().n_collumn
+                self.inFile.temperature = parser.parse_args().temperature/0.0083144621
+                self.inFile.mu = [parser.parse_args().chem_pot]
+                self.inFile.box = [parser.parse_args().box, parser.parse_args().box, parser.parse_args().box]
+
             self.runname = parser.parse_args().write_his
             self.inFile.setWidth(parser.parse_args().his_width)
             self.setWidth(parser.parse_args().his_width)
@@ -503,7 +552,7 @@ class hisFile(object):
             #T = '358.0'
             mu = temp[1][:len(temp[1])-1]
             #inFile = cassandraFile([ '../'+T+'/'+mu+'/'+self.runs[i][:len(self.runs[i])-1]])
-            inFile = cassandraFile([ '../'+T+'/'+mu+'/t'+T+'m'+mu ])
+            inFile = inputFile([ '../'+T+'/'+mu+'/t'+T+'m'+mu ])
             read_err = inFile.read(self.start_line)
             if (read_err == 0):
                 labels.append('$T=%s, \mu=%s$' % (T, mu))
@@ -630,6 +679,7 @@ def main(argv=None):
     parser.add_argument("-l","--show_legend", action="store_true",
                    help='Show the legend.')
     parser.add_argument("-o","--write_his", type=str,
+                        choices=['cassandra', 'dat'],
                    help='Histogram file type.')
     parser.add_argument("-w","--his_width", type=float,
                    help='Histogram energy width [kJ/mol]')
@@ -639,6 +689,16 @@ def main(argv=None):
                    help='Ending line to operate on property file.')
     parser.add_argument("-j","--num_beads", type=int,
                    help='Number of beads for lattice surfactant.')
+    parser.add_argument("--e_collumn", type=int,
+                   help='The collumn number with the energy (starts with 0) (dimensionless).')
+    parser.add_argument("--n_collumn", type=int,
+                   help='The collumn number with the no. of molecules (starts with 0.')
+    parser.add_argument("--chem_pot", type=float,
+                   help='The chemical potential (dimensionless)')
+    parser.add_argument("--temperature", type=float,
+                   help='The temperature (dimensionless)')
+    parser.add_argument("--box", type=float,
+                   help='box length')
 
     HIS = hisFile()
     HIS.addParser(parser)
@@ -649,11 +709,12 @@ def main(argv=None):
     if parser.parse_args().plot_his:
         HIS.plot()
 
-    if parser.parse_args().plot_nmols:
-        HIS.plotEN('N')
+    if (parser.parse_args().write_his == 'cassandra'):
+        if parser.parse_args().plot_nmols:
+            HIS.plotEN('N')
 
-    if parser.parse_args().plot_energy:
-        HIS.plotEN('E')
+        if parser.parse_args().plot_energy:
+            HIS.plotEN('E')
 
 if __name__ == '__main__':
     sys.exit(main())
