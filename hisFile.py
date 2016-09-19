@@ -62,7 +62,7 @@ class inputFile(object):
         if (self.data_type == "cassandra"):
             self.readInp()
             error = self.readPrp(start_line)
-        elif (self.data_type == "dat"):
+        else:
             error = self.readData(start_line)
         return error
 
@@ -73,7 +73,7 @@ class inputFile(object):
         return self.mu
 
     def getTemp(self):
-        return self.temperature * 0.0083144621
+        return self.temperature * 0.83144621
 
     def getBox(self):
         return self.box
@@ -101,7 +101,7 @@ class inputFile(object):
                         self.mu = []
                         mu_str = ifile.readline().strip().split()
                         for i in range(self.nspecies):
-                            self.mu.append( float( mu_str[i] ) )
+                            self.mu.append( float( mu_str[i] ) * 100.0 )
                     elif (data[1] == 'Temperature_Info'):
                         self.temperature = float( ifile.readline().strip().split()[0] )
                     elif (data[1] == 'Box_Info'):
@@ -166,7 +166,7 @@ class inputFile(object):
                     	#for ispecies in n_collumn[1:]:
                     	#    self.nmols[len(self.nmols) - 1] += int(float(data[ispecies]))
 
-                    	self.energy.append( float(data[e_collumn]) )
+                    	self.energy.append( float(data[e_collumn]) * 100.0)
 
             if (i_line >= end_line): break
 
@@ -179,7 +179,7 @@ class inputFile(object):
 
     def readData(self, start_line=0, end_line=1000000):
         # open the file
-        filename = self.runname + '.dat'
+        filename = self.runname + '.' + self.data_type
 
         try:
             ifile = open('./' + filename, 'r')
@@ -300,7 +300,7 @@ class hisFile(object):
         if (parser.parse_args().write_his):
             self.inFile = inputFile(self.runs)
             self.inFile.data_type = parser.parse_args().write_his
-            if (parser.parse_args().write_his == 'dat'):
+            if (parser.parse_args().write_his != 'cassandra'):
                 if (not parser.parse_args().e_collumn):
                     print 'Need to specify:' 
                     print '  e_collumn'
@@ -323,11 +323,11 @@ class hisFile(object):
                     return -1
                 self.inFile.e_collumn = parser.parse_args().e_collumn
                 self.inFile.n_collumn = parser.parse_args().n_collumn
-                self.inFile.temperature = parser.parse_args().temperature/0.0083144621
+                self.inFile.temperature = parser.parse_args().temperature /0.83144621
                 self.inFile.mu = [parser.parse_args().chem_pot]
                 self.inFile.box = [parser.parse_args().box, parser.parse_args().box, parser.parse_args().box]
 
-            self.runname = parser.parse_args().write_his
+            #self.runname = parser.parse_args().write_his
             self.inFile.setWidth(parser.parse_args().his_width)
             self.setWidth(parser.parse_args().his_width)
 
@@ -350,6 +350,8 @@ class hisFile(object):
             self.show_color = parser.parse_args().show_color
         else:
             self.show_color = False
+
+        return 0
 
     def getNmaxEmin(self, filename):
         # open the file
@@ -699,8 +701,7 @@ def main(argv=None):
     parser.add_argument("-l","--show_legend", action="store_true",
                    help='Show the legend.')
     parser.add_argument("-o","--write_his", type=str,
-                        choices=['cassandra', 'dat'],
-                   help='Histogram file type.')
+                   help='Histogram file type (''cassandra'' for Cassandra output).')
     parser.add_argument("-w","--his_width", type=float,
                    help='Histogram energy width [kJ/mol]')
     parser.add_argument("-s","--start_line", type=int,
