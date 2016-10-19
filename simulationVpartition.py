@@ -365,30 +365,33 @@ class hisFile(object):
     def generateMu(self, mu_max, T):
         """
         Generate a list of mus
+        Procedure:
+            assume mu[i] = mu_step * i**exponent
+                (increasing exponent will get larger chem spacing 
+                as you go to lower chemical potentials)
         """
-        mu_step_cut = 0.0002
+        mu_step_cut = [0.0002,5]
         temp = []
         mu = []
         N = []
         mu.append(mu_max)
         temp.append(T)
         N.append(5)
+        exponent = 1.01
         for i_mu in range(1, self.mu_len):
             temp.append(T)
             N.append(5)
-            mu_step_temp = i_mu**1.1 * self.mu_step
-            #mu_step_temp = i_mu**1.1 * self.mu_step
-            if (mu_step_temp <= mu_step_cut):
+            mu_step_temp = i_mu**exponent * self.mu_step
+            if (mu_step_temp <= mu_step_cut[0]):
                 mu_step_temp = 0.0005 * i_mu
-                #mu_step_temp = 0.0001 * i_mu
+            elif (mu_step_temp > mu_step_cut[1]):
+                mu_step_temp = 0.05 * i_mu
 
             mu_test = mu[i_mu-1] - mu_step_temp
-            #mu_test = mu[i_mu-1] - 0.001
             if (mu_test > self.mu_low):
                 mu.append(mu_test)
             else:
-                #mu.append(mu_test)
-                mu.append(self.mu_low)
+                mu.append(mu_test)
 
         return temp[::-1], mu[::-1], N[::-1]
 
@@ -433,11 +436,378 @@ class hisFile(object):
 
         return mu_max, T
 
+    def getMuMinMaxT(self):
+        """
+        Get the runs' temperature list and number of mu
+        """
+        T = []
+        mu_min = []
+        mu_max = []
+        mu_low = -1000
+        mu_high = 1000
+        for i in range( len(self.runs) ):
+            read_err = self.read(self.runs[i])
+            T_temp = self.getT()
+            mu_temp = self.getmu()
+                
+            if (T_temp not in T):
+                if (self.temp_calc):
+                    for i_T in self.temp_calc:
+                        if (abs(T_temp - i_T) / float(i_T) < 0.05):
+                            T.append(T_temp)
+                            mu_min.append(mu_high)
+                            mu_max.append(mu_low)
+                else:
+                    T.append(T_temp)
+                    mu_min.append(mu_high)
+                    mu_max.append(mu_low)
 
-    def generateCurve(self, entropy_version=1, mu_step=0.000002, mu_low=-0.05, mu_len=30, N_hi=[60, 130]):
+            for i_T in range( len(T) ):
+                if (T_temp == T[i_T]):
+                    if (mu_temp < mu_min[i_T]):
+                        mu_min[i_T] = mu_temp
+                    if (mu_temp > mu_max[i_T]):
+                        mu_max[i_T] = mu_temp
+    
+        for T_calc in self.temp_calc:
+            not_in_array = True
+            for i_T in T:
+                if (abs(i_T - T_calc) / float(T_calc) < 0.05):
+                    not_in_array = False
+                    break
+
+            if not_in_array:
+                print "The temperature in the input (", str(T_calc), ") is not used in any simulation run given to entropy. It may not be as accurate."
+                T.append(T_calc)
+                mu_min.append(mu_high)
+                mu_max.append(mu_low)
+
+        return mu_min, mu_max, T
+
+    def generateCurve2(self, entropy_version=1, save_file=False, mu_len=30, N_lo=[0.01,0.1],N_hi=[60, 130], max_iter=100):
         """
         Generate a PVT that covers ideal gas and high pressure
         for micellization
+        self-optimizing process:
+            for each temperature
+            find a chemical potential that lands in the range of upper N
+            find a chemical potential that lands in the range of lower N
+            starting from the top step down ramping up the step size to scale somewhat with the N(\mu) function
+        """
+        N_low_min = N_lo[0]
+        N_low_max = N_lo[1]
+        N_hi_min = N_hi[0]
+        N_hi_max = N_hi[1]
+        mu_min, mu_max, T = self.getMuMinMaxT()
+        temp_tot = []
+        mu_tot = []
+        N_tot = []
+        for i_T in range(len(T)):
+            print 'generating for T =', T[i_T]
+            # Find the max chemical potential
+            mu_m = [mu_max[i_T]]
+            temp = []
+            mu = []
+            N = []
+            for i in range(max_iter):
+                if (entropy_version == 1):
+                    runEntropy([T[i_T]], mu_m, [5])
+                else:
+                    runEntropy2([T[i_T]], mu_m, [5])
+                part = partition()
+                part.readPVTsimple()
+                if (part.N[0] < N_hi_min):
+                    mu_m[0] = max(mu_m[0]*1.1, mu_m[0]+0.5)
+                elif (part.N[0] > N_hi_max):
+                    mu_m[0] = min(mu_m[0]/1.1, mu_m[0]-0.01)
+                else:
+                    N_mu_m = part.N[0]
+                    break
+            if (i == max_iter):
+                print 'change the maximum N range!'
+                return
+
+            temp.append(T[i_T])
+            N.append(5)
+            mu.append(mu_m[0])
+
+            # Find the min chemical potential
+            mu_n = [mu_min[i_T]]
+            if (entropy_version == 1):
+                runEntropy([T[i_T]], mu_n, [5])
+            else:
+                runEntropy2([T[i_T]], mu_n, [5])
+            part = partition()
+            part.readPVTsimple()
+            pmN = part.N[0]
+            pi_mu = mu_n[0]
+            if (part.N[0] < N_low_min):
+                mu_n[0] = max(mu_n[0]*1.3, mu_n[0]+0.1)
+            elif (part.N[0] > N_low_max):
+                mu_n[0] = min(mu_n[0]/3.0, mu_n[0]-2.0)
+
+            for i in range(max_iter):
+                if (N_low_min < part.N[0] < N_low_max):
+                    N_mu_n = part.N[0]
+                    break
+
+                if (entropy_version == 1):
+                    runEntropy([T[i_T]], mu_n, [5])
+                else:
+                    runEntropy2([T[i_T]], mu_n, [5])
+                part = partition()
+                part.readPVTsimple()
+
+                m = (part.N[0] - pmN) / (mu_n[0] - pi_mu)
+                b = part.N[0] - (m * mu_n[0])
+                pmN = part.N[0]
+                pi_mu = mu_n[0]
+                mu_n[0] = (N_low_min - b) / m 
+
+            if (i == max_iter):
+                print 'change the minimum N range!'
+                return
+
+            # Find the chemical potentials in between
+            mu_step = abs(mu_m[0] - mu_n[0]) / float(mu_len)**2.0
+            exponent = 1.0 + float(1.0 / mu_len)
+            mu_step_temp = mu_step
+            i_mu = mu_m
+            for im in range(mu_len):
+                i_mu[0] -= mu_step_temp
+                mu_step_temp = im**exponent * mu_step
+
+                temp.append(T[i_T])
+                N.append(5)
+                mu.append(i_mu[0])
+
+            temp.append(T[i_T])
+            N.append(5)
+            mu.append(mu_n[0])
+
+            temp_tot.extend(temp)
+            mu_tot.extend(mu)
+            N_tot.extend(N)
+
+        temp_tot.reverse()
+        mu_tot.reverse()
+        N_tot.reverse()
+
+        if (entropy_version == 1):
+            runEntropy(temp_tot, mu_tot, N_tot)
+        else:
+            runEntropy2(temp_tot, mu_tot, N_tot)
+        
+        if (save_file):
+            s_file = open( 'TmuN_sVp.dat', 'w')
+            for i in range( len(N_tot) ):
+                s_file.write('%f %f %f\n' % (temp_tot[i], mu_tot[i], N_tot[i]))
+                if i == len(N_tot)-1:
+                    s_file.write('stop\n')
+
+    def generateCurve(self, entropy_version=1, save_file=False, mu_len=30, N_lo=[0.01,0.1],N_hi=[60, 130], max_iter=100):
+        """
+        Generate a PVT that covers ideal gas and high pressure
+        for micellization
+        self-optimizing process:
+            for each temperature
+            find a chemical potential that lands in the range of upper N
+            find a chemical potential that lands in the range of lower N
+            starting from the top step down in equal increments of N
+        """
+        N_low_min = N_lo[0]
+        N_low_max = N_lo[1]
+        N_hi_min = N_hi[0]
+        N_hi_max = N_hi[1]
+        mu_min, mu_max, T = self.getMuMinMaxT()
+        temp_tot = []
+        mu_tot = []
+        N_tot = []
+        for i_T in range(len(T)):
+            print 'generating for T =', T[i_T]
+            # Find the max chemical potential
+            mu_m = [mu_max[i_T]]
+            temp = []
+            mu = []
+            N = []
+            for i in range(max_iter):
+                if (entropy_version == 1):
+                    runEntropy([T[i_T]], mu_m, [5])
+                else:
+                    runEntropy2([T[i_T]], mu_m, [5])
+                part = partition()
+                part.readPVTsimple()
+                if (part.N[0] < N_hi_min):
+                    mu_m[0] = max(mu_m[0]*1.1, mu_m[0]+0.5)
+                elif (part.N[0] > N_hi_max):
+                    mu_m[0] = min(mu_m[0]/1.1, mu_m[0]-0.01)
+                else:
+                    N_mu_m = part.N[0]
+                    break
+            if (i == max_iter):
+                print 'change the maximum N range!'
+                return
+
+            temp.append(T[i_T])
+            N.append(5)
+            mu.append(mu_m[0])
+
+            # Find the min chemical potential
+            mu_n = [mu_min[i_T]]
+            if (entropy_version == 1):
+                runEntropy([T[i_T]], mu_n, [5])
+            else:
+                runEntropy2([T[i_T]], mu_n, [5])
+            part = partition()
+            part.readPVTsimple()
+            pmN = part.N[0]
+            pi_mu = mu_n[0]
+            if (part.N[0] < N_low_min):
+                mu_n[0] = max(mu_n[0]*1.3, mu_n[0]+0.1)
+            elif (part.N[0] > N_low_max):
+                mu_n[0] = min(mu_n[0]/3.0, mu_n[0]-2.0)
+
+            for i in range(max_iter):
+                if (N_low_min < part.N[0] < N_low_max):
+                    N_mu_n = part.N[0]
+                    break
+
+                if (entropy_version == 1):
+                    runEntropy([T[i_T]], mu_n, [5])
+                else:
+                    runEntropy2([T[i_T]], mu_n, [5])
+                part = partition()
+                part.readPVTsimple()
+
+                m = (part.N[0] - pmN) / (mu_n[0] - pi_mu)
+                b = part.N[0] - (m * mu_n[0])
+                pmN = part.N[0]
+                pi_mu = mu_n[0]
+                mu_n[0] = (N_low_min - b) / m 
+                #if (part.N[0] < N_low_min):
+                #    mu_n[0] = max(mu_n[0]*1.3, mu_n[0]+0.1)
+                #elif (part.N[0] > N_low_max):
+                #    mu_n[0] = min(mu_n[0]/3.0, mu_n[0]-2.0)
+                #else:
+
+            if (i == max_iter):
+                print 'change the minimum N range!'
+                return
+
+            # Find the chemical potentials in between
+            mu_step = abs(mu_m[0] - mu_n[0]) / float(mu_len)
+            i_mu = mu_m
+            N_step = abs(N_mu_m - N_mu_n) / float(mu_len)
+            Nim = N_mu_m
+            pmN = Nim
+            pi_mu = i_mu[0]
+            for im in range(mu_len):
+                Nim -= N_step
+                i_mu[0] -= mu_step
+                Nim_min = 0
+                Nim_max = 10000
+                for i in range(max_iter):
+                    if (entropy_version == 1):
+                        runEntropy([T[i_T]], i_mu, [5])
+                    else:
+                        runEntropy2([T[i_T]], i_mu, [5])
+                    part = partition()
+                    part.readPVTsimple()
+
+
+                    #print part.N[0]
+                    if (abs((part.N[0] - Nim) / Nim) < 0.01):
+                        mu_step = abs(mu[im] - i_mu[0])
+                        #pmN = part.N[0]
+                        #pi_mu = i_mu[0]
+                        break
+
+                    if i == 0:
+                        if part.N[0] > Nim:
+                            top = 1
+                            bottom = 0
+                            above = -0.2
+                            below = 0.01
+                            factor = above
+                        else:
+                            top = 0
+                            bottom = 1
+                            above = -0.01
+                            below = 0.2
+                            factor = below
+                        i_mu[0] += mu_step * factor
+                        #m = (i_mu[0] - pi_mu) / (part.N[0] - pmN)
+                        #i_mu[0] = ( (Nim - pmN) * m ) + pi_mu
+                    else:
+                        if part.N[0] > Nim:
+                            factor = above
+                            if top: 
+                                # was top before bottom?
+                                if bottom and top > bottom:
+                                    mu_step = abs(mu[im] - i_mu[0])
+                                    break
+                            else:
+                                top = 0.5
+                            #i_mu[0] -= mu_step/above
+                            #i_mu[0] -= mu_step * 0.01 * factor
+                        else: 
+                            factor = below
+                            if bottom:
+                                # was top before bottom?
+                                if top and bottom > top:
+                                    mu_step = abs(mu[im] - i_mu[0])
+                                    break
+                            else:
+                                bottom = 0.5
+                                
+                        i_mu[0] += mu_step * factor
+                        #i_mu[0] -= mu_step * (part.N[0] - Nim) / Nim * factor
+                            #i_mu[0] += mu_step/below
+
+                temp.append(T[i_T])
+                N.append(5)
+                mu.append(i_mu[0])
+
+            temp.append(T[i_T])
+            N.append(5)
+            mu.append(mu_n[0])
+
+            temp_tot.extend(temp)
+            mu_tot.extend(mu)
+            N_tot.extend(N)
+
+        temp_tot.reverse()
+        mu_tot.reverse()
+        N_tot.reverse()
+
+        if (entropy_version == 1):
+            runEntropy(temp_tot, mu_tot, N_tot)
+        else:
+            runEntropy2(temp_tot, mu_tot, N_tot)
+        
+        if (save_file):
+            s_file = open( 'TmuN_sVp.dat', 'w')
+            for i in range( len(N_tot) ):
+                s_file.write('%f %f %f\n' % (temp_tot[i], mu_tot[i], N_tot[i]))
+                if i == len(N_tot)-1:
+                    s_file.write('stop\n')
+
+
+    def generateCurveOld(self, entropy_version=1, save_file=False, mu_step=0.0002, mu_low=-0.05, mu_len=30, N_hi=[60, 130]):
+        """
+        Generate a PVT that covers ideal gas and high pressure
+        for micellization
+        self-optimizing process:
+            for each temperature
+            generate a range of chemical potentials, 
+            starting from the largest chemical potential in the histograms at the temperature
+
+            if the N from the maximum chemical potential is:
+                Below the range increase the maximum chemical potential (mu_m)
+                Above the range decrease the maximum chemical potential (mu_m)
+            if the N from the minimum chemical potential is:
+                Below the range, decrease the step size (self.mu_step), so its to the bottom slower
+                Above the range, increase the step size (self.mu_step), so it gets down faster
         """
         max_iter = 100
         N_low_min = 0.01
@@ -449,12 +819,12 @@ class hisFile(object):
         self.mu_low = mu_low
         self.mu_len = mu_len
         mu_max, T = self.getMuMaxT()
-        temp_tol = []
-        mu_tol = []
-        N_tol = []
+        temp_tot = []
+        mu_tot = []
+        N_tot = []
         for i_T in range(len(T)):
             mu_m = mu_max[i_T]
-            # change mu untill 
+            # change mu until the upper and lower N are within both ranges
             for i in range(max_iter):
                 temp, mu, N = self.generateMu(mu_m, T[i_T])
                 if (entropy_version == 1):
@@ -465,9 +835,9 @@ class hisFile(object):
                 part.readPVTsimple()
                 N_mu_high = part.N[mu_len-1]
                 if (N_mu_high < N_hi_min):
-                    mu_m += 0.001
+                    mu_m += 0.01
                 elif (N_mu_high > N_hi_max):
-                    mu_m -= 0.001
+                    mu_m -= 0.01
 
                 N_m_low = part.N[0]
                 if (N_m_low > N_low_max):
@@ -478,14 +848,23 @@ class hisFile(object):
                     if (N_hi_min < N_mu_high < N_hi_max):
                         break
 
+                #print N_mu_high, N_m_low
+
             self.mu_step = mu_step_start
-            temp_tol.extend(temp)
-            mu_tol.extend(mu)
-            N_tol.extend(N)
+            temp_tot.extend(temp)
+            mu_tot.extend(mu)
+            N_tot.extend(N)
         if (entropy_version == 1):
-            runEntropy(temp_tol, mu_tol, N_tol)
+            runEntropy(temp_tot, mu_tot, N_tot)
         else:
-            runEntropy2(temp_tol, mu_tol, N_tol)
+            runEntropy2(temp_tot, mu_tot, N_tot)
+
+        if (save_file):
+            s_file = open( 'TmuN_sVp.dat', 'w')
+            for i in range( len(N_tot) ):
+                s_file.write('%f %f %f\n' % (temp_tot[i], mu_tot[i], N_tot[i]))
+                if i == len(N_tot)-1:
+                    s_file.write('stop\n')
             
     def calcError(self):
         """
@@ -602,6 +981,9 @@ def main(argv=None):
     parser.add_argument("-t","--temperature", type=float, nargs="+",
                    help='temperature you want to pvt to be calculated at '
                         'assumed to be all those in the input_file.')
+    parser.add_argument("-s","--save", action="store_true",
+                   help='Save the T, mu, N generated.  Use the output without simulationVpartition by:'
+                        ' entropy2.x < TmuN_sVp.dat')
 
     if (parser.parse_args().input_file):
         runs = readRunsFile(parser.parse_args().input_file)
@@ -616,11 +998,14 @@ def main(argv=None):
     if (parser.parse_args().error):
         HIS.calcError()
     elif (parser.parse_args().generate):
-	mu_step_size = 0.0001
-	mu_min = -0.1
-	mu_length = 50
-	N_max_range = [50, 80]
-        HIS.generateCurve(parser.parse_args().generate, mu_step_size, mu_min, mu_length, N_max_range)
+        mu_step_size = 0.0001
+        mu_min = -0.1
+        mu_length = 50
+        N_min_range = [0.01, 0.1]
+        N_max_range = [70, 90]
+        #N_max_range = [400, 450]
+        HIS.generateCurve2(parser.parse_args().generate, parser.parse_args().save, mu_length, N_min_range, N_max_range)
+        #HIS.generateCurveOld(parser.parse_args().generate, parser.parse_args().save, mu_step_size, mu_min, mu_length, N_max_range)
 
 if __name__ == '__main__':
     sys.exit(main())
