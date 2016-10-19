@@ -67,6 +67,8 @@ def sigmoidIntegral(x, F0, A2, x0, dx):
 def getSpline(x, y, n_points=1000):
     x, y, order_error = sortArray(x, y)
     if (order_error):
+        print 'too many entries are not in order'
+        print 'The program assumes that the lowest N is first in the pvt.dat file for each temperature.'
         sys.exit(main())
 
     tck = interpolate.splrep(x, y, s=0)
@@ -379,10 +381,10 @@ class partition2pressure(object):
         line = pvt_file.readline()
 
         data = line.strip().split()
-	try:
-	    temp = [float(data[0])]
-	except IndexError:
-	    sys.exit('you forgot to generate pvt.dat')
+        try:
+            temp = [float(data[0])]
+        except IndexError:
+            sys.exit('you forgot to generate pvt.dat')
         t_range = [1]
         t_count = 0
 
@@ -432,8 +434,8 @@ class partition2pressure(object):
     
     def convert(self):
         # keep track of how many temepratures there are
-        m_gas = 2.0
-	self.itemp_skip = []
+        m_gas = 1.0
+        self.itemp_skip = []
         
         for itemp in range(len(self.temp)):
             if (self.calc_conc):
@@ -441,28 +443,36 @@ class partition2pressure(object):
             elif (self.calc_rho):
                 m_gas = self.temp[itemp] * self.kB
             m_min = m_gas
-            m_max = 0
-            for i in range(int( len(self.pressure) - 5 )):
-                x = self.x[i:i+5, itemp]
-                y = self.pressure[i:i+5, itemp]
+            m_best = 0
+            ave_x = sum(self.x[:,itemp]) / float(len(self.pressure))
+            for i in range(int( len(self.pressure) - 4 )):
+                x = self.x[i:i+4, itemp]
+                y = self.pressure[i:i+4, itemp]
                 # y = mx + b
                 m, b, m_s, b_s, r = linFit(x, y)
-                if (m_gas*1.01 >= m > m_max):
-                #if (m > m_max):
-                    m_max = m
-                    b_max = b
-            print ('max slope(T =%6.2f) = %f' % (self.temp[itemp], m_max))
-            if (m_max == 0):
-		self.itemp_skip.append( itemp )
+                if (i == 0 ):
+                    if (self.x[i,itemp] < ave_x):
+                        b_shift = b
+                if (i == (len(self.pressure) - 5) ): 
+                    if (self.x[i+4,itemp] < ave_x):
+                        b_shift = b
+
+                if ( abs(m - m_gas) < abs(m_best - m_gas) ):
+                    m_best = m
+                    i_best = [i, i+4]
+
+            # check how close the the pressure obeys the IGEOS
+            print ('min IGEOS deviation(T =%6.2f) = %f' % (self.temp[itemp], m_best))
+            print ('   over a range of points %f - %f' % (self.x[ i_best[0], itemp], self.x[ i_best[1], itemp]))
+            if (m_best == 0):
+                self.itemp_skip.append( itemp )
                 print "The maximum slope in your system is either "
-		print "greater than "+str(m_gas)+" or less than 0."
+                print "greater than "+str(m_gas)+" or less than 0."
                 print "This does not make sense for calculating cmcs."
-		b_max = b
-		#continue
+                b_shift = b
                 
-            # make sure that the pressure obeys the IGEOS at the limit
             for i in range( len(self.pressure[:,itemp]) ):
-                self.pressure[i, itemp] -= b_max
+                self.pressure[i, itemp] -= b_shift
 
     def calcCMCslope(self):
         self.cmc = []
@@ -473,7 +483,7 @@ class partition2pressure(object):
         percentage = 0.1
         m_gas = 1.0
         for itemp in range(len(self.temp)):
-	    if (itemp in self.itemp_skip): continue
+            if (itemp in self.itemp_skip): continue
 
             if (self.calc_conc):
                 m_gas = self.temp[itemp] #* self.gas_const
@@ -512,10 +522,11 @@ class partition2pressure(object):
                 self.cmc_s.append( x_spl[2] - x_spl[0] )
                 
             elif (self.cmc_method == 'intercept'):
-		if m_min == m_gas:
-		    self.itemp_skip.append(itemp)
-		    print 'could not find the intercept'
-		    return
+                if m_min == m_gas:
+                    self.itemp_skip.append(itemp)
+                    print 'could not find the intercept'
+                    return
+
                 self.cmc.append( abs( b_min / (m_gas - m_min)) )
                 self.cmc_s.append( self.cmc[itemp] * 
                                   ( (b_s_min * 100)**2.0 + (m_s_min * 100)**2.0)**0.5 )
@@ -534,7 +545,7 @@ class partition2pressure(object):
         self.cmc_intercept = []
         self.mu_cmc = []
         for itemp in range(len(self.temp)):
-	    if (itemp in self.itemp_skip): continue
+            if (itemp in self.itemp_skip): continue
 
             n_points = len(self.x)
             x = self.x[self.begin_fit:n_points-self.end_fit, itemp]
@@ -554,7 +565,7 @@ class partition2pressure(object):
         self.cmc_intercept = []
         self.mu_cmc = []
         for itemp in range(len(self.temp)):
-	    if (itemp in self.itemp_skip): continue
+            if (itemp in self.itemp_skip): continue
 
             n_points = len(self.x)
             x = self.x[self.begin_fit:n_points-self.end_fit, itemp]
@@ -621,7 +632,7 @@ class partition2pressure(object):
         self.cmc_intercept = []
         self.mu_cmc = []
         for itemp in range(len(self.temp)):
-	    if (itemp in self.itemp_skip): continue
+            if (itemp in self.itemp_skip): continue
 
             n_points = len(self.x)
             i_cmc, i_cmc_e = maxCurvature(self.x[self.begin_fit:n_points-self.end_fit, itemp], self.pressure[self.begin_fit:n_points-self.end_fit, itemp], False)
@@ -639,7 +650,7 @@ class partition2pressure(object):
         self.cmc_intercept = []
         self.mu_cmc = []
         for itemp in range(len(self.temp)):
-	    if (itemp in self.itemp_skip): continue
+            if (itemp in self.itemp_skip): continue
 
             n_points = len(self.x)
             i_cmc, i_p, i_d2, i_cmc_e = max2ndDerivative(self.x[self.begin_fit:n_points-self.end_fit, itemp], self.pressure[self.begin_fit:n_points-self.end_fit, itemp], self.cmc_method, False)
@@ -650,7 +661,7 @@ class partition2pressure(object):
         
         return self.cmc, self.cmc_s
     
-    def write(self):
+    def writeCMC(self):
         cmc_file = open("cmc_part.dat", 'w')
         if (self.calc_phi):
             cmc_file.write("T   phi_cmc d_phi_cmc    mu_cmc\n")
@@ -658,12 +669,18 @@ class partition2pressure(object):
             cmc_file.write("T   rho_cmc d_rho_cmc    mu_cmc\n")
         else:
             cmc_file.write("T   N_cmc d_N_cmc    mu_cmc\n")
+
         for itemp in range(len(self.temp)):
-	    if (itemp in self.itemp_skip): continue
+            if (itemp in self.itemp_skip): continue
 
             cmc_file.write("%f %10.8f %10.8f %10.8f\n" % ( self.temp[itemp]/0.008314, 
                                                     self.cmc[itemp], self.cmc_s[itemp],
                                                     self.mu_cmc[itemp] ))
+
+    def writePN(self):
+        for itemp in range(len(self.temp)):
+            if (itemp in self.itemp_skip): continue
+
             mu_file = open("PVphiVmu" + str(self.temp[itemp]) + ".dat", 'w')
             if (self.calc_phi):
                 mu_file.write("phi     Pressure   mu\n")
@@ -676,7 +693,6 @@ class partition2pressure(object):
                                                   self.pressure[i, itemp], 
                                                   self.mu[i, itemp]) )
             mu_file.close()
-        return
     
     def plot(self):
         fig = plt.figure()
@@ -686,7 +702,7 @@ class partition2pressure(object):
             y = self.pressure[:, itemp]
             plt.plot(x, y, '-', c=self.colors[itemp], label='T = '+str(self.temp[itemp]))
         
-	    if (itemp in self.itemp_skip): continue
+            if (itemp in self.itemp_skip): continue
            
             if (self.calc_rho):
                 convert = self.temp[itemp] * self.kB 
@@ -773,10 +789,13 @@ def main(argv=None):
     pressure.addParser(parser)
     pressure.readPVT()
     pressure.convert()
-    pressure.calculateCMC()
-
     if (parser.parse_args().output):
-        pressure.write()
+        pressure.writePN()
+
+    if (parser.parse_args().cmc_method):
+        pressure.calculateCMC()
+        if (parser.parse_args().output):
+            pressure.writeCMC()
 
     if (parser.parse_args().save_plot or parser.parse_args().show_plot):
         pressure.plot()
