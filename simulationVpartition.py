@@ -866,7 +866,7 @@ class hisFile(object):
                 if i == len(N_tot)-1:
                     s_file.write('stop\n')
             
-    def calcError(self):
+    def calcError(self, version=2):
         """
         Calculate the relative error between the calculated
         pratition function and the
@@ -900,23 +900,32 @@ class hisFile(object):
             E.append(self.getEave())
 
         # run entropy with runs used to develop partition function
-        runEntropy(T, mu, N)
-        # read pvt.dat 
+        if (version == 2):
+            runEntropy2(T, mu, N)
+        elif (version == 1):
+            runEntropy(T, mu, N)
+        else:
+            print 'version needs to 2 or 1'
+            return
         part = partition()
         part.readPVTsimple()
-        # write %error
+        if (version == 1):
+            for i in range( len(self.runs) ):
+                part.E[i] *= part.N[i]
+
         print '       run      |   T      mu   |  N_sim    E_sim  |  N_part   E_part |   %e(N)   %e(E)'
         print '----------------+---------------+------------------+------------------+-----------------'
         for i in range( len(self.runs) ):
             N_err = float(part.N[i] - N[i]) / N[i] * 100.0 
-            E_err = float(part.E[i]*part.N[i] - E[i]) / (E[i]+1E-8) * 100.0
+            E_err = float(part.E[i] - E[i]) / (E[i]+1E-8) * 100.0
             print ('%15s | %6.3f %6.2f | %6.2f %9.3f | %6.2f %9.3f | %7.2f %7.2f' % 
                   (self.runs[i], T[i], mu[i], N[i], E[i], 
-                  part.N[i], part.E[i]*part.N[i], N_err, E_err))
+                  part.N[i], part.E[i], N_err, E_err))
+                  #part.N[i], part.E[i]*part.N[i], N_err, E_err))
         if (cp_hs2):
             shutil.move('./input_hs2_tmp.dat','./input_hs2.dat')
-        if (cp_pvt):
-            shutil.move('./pvt_tmp.dat','./pvt.dat')
+        #if (cp_pvt):
+            #shutil.move('./pvt_tmp.dat','./pvt.dat')
 
 class partition(object):
     """
@@ -936,7 +945,6 @@ class partition(object):
         if not os.path.isfile(pvt_name):
             sys.exit("Error! file "+pvt_name+" does not exist.")
     
-        
         params = {}
     
         # get the ln of partition function
@@ -973,10 +981,11 @@ def main(argv=None):
     parser.add_argument("-e","--error", action="store_true",
                    help='Calculate the error in the N and E by the '
                         'partition function compared to the simulation')
-    parser.add_argument("-g","--generate", metavar='entropy version', 
+    parser.add_argument("-v","--version",  metavar='entropy version',
                         type=int, choices=[1,2],
-                   help='Generate the pvt.dat file for CMC calculation, '
-                        'can either use the partiton function generated '
+                   help='Generate the pvt.dat file for CMC calculation')
+    parser.add_argument("-g","--generate",
+                   help='can either use the partiton function generated '
                         'by entropy[1,2].x.  Assumes 2 if none given.')
     parser.add_argument("-t","--temperature", type=float, nargs="+",
                    help='temperature you want to pvt to be calculated at '
@@ -996,15 +1005,15 @@ def main(argv=None):
     HIS = hisFile(runs, parser.parse_args().temperature)
 
     if (parser.parse_args().error):
-        HIS.calcError()
+        HIS.calcError(parser.parse_args().version)
     elif (parser.parse_args().generate):
         mu_step_size = 0.0001
         mu_min = -0.1
         mu_length = 50
         N_min_range = [0.01, 0.1]
-        N_max_range = [70, 90]
-        #N_max_range = [400, 450]
-        HIS.generateCurve2(parser.parse_args().generate, parser.parse_args().save, mu_length, N_min_range, N_max_range)
+        #N_max_range = [70, 90]
+        N_max_range = [200, 450]
+        HIS.generateCurve2(parser.parse_args().version, parser.parse_args().save, mu_length, N_min_range, N_max_range)
         #HIS.generateCurveOld(parser.parse_args().generate, parser.parse_args().save, mu_step_size, mu_min, mu_length, N_max_range)
 
 if __name__ == '__main__':
