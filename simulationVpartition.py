@@ -90,8 +90,8 @@ class hisFile(object):
     def getEave(self):
         ave = 0
         for i in range(len(self.histogram[0,:])):
-            ave += self.E[i] * sum(self.histogram[:,i]) / float(self.his_sum)
-        return ave
+            ave += self.E[i] * sum(self.histogram[:,i]) 
+        return ave / float(self.his_sum)
 
     def getNave(self):
         ave = 0
@@ -866,7 +866,7 @@ class hisFile(object):
                 if i == len(N_tot)-1:
                     s_file.write('stop\n')
             
-    def calcError(self, version=2):
+    def calcError(self, version=2, write_latex=False):
         """
         Calculate the relative error between the calculated
         pratition function and the
@@ -909,12 +909,26 @@ class hisFile(object):
             return
         part = partition()
         part.readPVTsimple()
-        if (version == 1):
+        if (False): #version == 1):
             for i in range( len(self.runs) ):
                 part.E[i] *= part.N[i]
 
         print '       run      |   T      mu   |  N_sim    E_sim  |  N_part   E_part |   %e(N)   %e(E)'
         print '----------------+---------------+------------------+------------------+-----------------'
+        if write_latex:
+            latex_file = open( 'error.tex', 'w')
+            latex_file.write('\\begin{table}\n')
+            latex_file.write('  \\begin{center}\n')
+            latex_file.write('    \\begin{tabular}{c c | c c | c c | c c}\n')
+            latex_file.write('    \hline\n')
+            latex_file.write('    \hline\n')
+            latex_file.write('    $T$ & $\mu$ & $\left<N\\right>_{\\text{sim}}$ & '
+                                               '$\left<E\\right>_{\\text{sim}}$ & '
+                                               '$\left<N\\right>_{\ln\\text{Z}}$ & '
+                                               '$\left<E\\right>_{\ln \\text{Z}}$ & '
+                                  '\%e($\left<N\\right>$) & \%e($\left<E\\right>$)\\\\\n')
+            latex_file.write('     \hline\n')
+
         for i in range( len(self.runs) ):
             N_err = float(part.N[i] - N[i]) / N[i] * 100.0 
             E_err = float(part.E[i] - E[i]) / (E[i]+1E-8) * 100.0
@@ -922,6 +936,22 @@ class hisFile(object):
                   (self.runs[i], T[i], mu[i], N[i], E[i], 
                   part.N[i], part.E[i], N_err, E_err))
                   #part.N[i], part.E[i]*part.N[i], N_err, E_err))
+            if write_latex:
+                latex_file.write('    %6.3f %s %6.2f %s %6.2f %s %9.3f %s %6.2f %s %9.3f %s %7.2f %s %7.2f \\\\\n' % 
+                                ( T[i], '&', mu[i], '&', N[i], '&', E[i], '&',
+                                  part.N[i], '&', part.E[i], '&', N_err, '&', E_err))
+
+        if write_latex:
+            latex_file.write('    \hline\n')
+            latex_file.write('    \hline\n')
+            latex_file.write('    \end{tabular}\n')
+            latex_file.write('  \end{center}\n')
+            latex_file.write('  \\vspace{-0pt}\n')
+            latex_file.write('  \\caption{Comparison of the $\left<N\\right>$ and $\left<E\\right>$ values from simulations and predicted from the partition function $\ln$Z.}\n')
+            latex_file.write('  \\label{tab:error_table}\n')
+            latex_file.write('\end{table}\n')
+            latex_file.close()
+
         if (cp_hs2):
             shutil.move('./input_hs2_tmp.dat','./input_hs2.dat')
         #if (cp_pvt):
@@ -984,7 +1014,7 @@ def main(argv=None):
     parser.add_argument("-v","--version",  metavar='entropy version',
                         type=int, choices=[1,2],
                    help='Generate the pvt.dat file for CMC calculation')
-    parser.add_argument("-g","--generate",
+    parser.add_argument("-g","--generate", action="store_true",
                    help='can either use the partiton function generated '
                         'by entropy[1,2].x.  Assumes 2 if none given.')
     parser.add_argument("-t","--temperature", type=float, nargs="+",
@@ -993,6 +1023,8 @@ def main(argv=None):
     parser.add_argument("-s","--save", action="store_true",
                    help='Save the T, mu, N generated.  Use the output without simulationVpartition by:'
                         ' entropy2.x < TmuN_sVp.dat')
+    parser.add_argument("--latex", action="store_true",
+                   help='Output error table in latex format/')
 
     if (parser.parse_args().input_file):
         runs = readRunsFile(parser.parse_args().input_file)
@@ -1005,14 +1037,14 @@ def main(argv=None):
     HIS = hisFile(runs, parser.parse_args().temperature)
 
     if (parser.parse_args().error):
-        HIS.calcError(parser.parse_args().version)
+        HIS.calcError(parser.parse_args().version, parser.parse_args().latex)
     elif (parser.parse_args().generate):
         mu_step_size = 0.0001
         mu_min = -0.1
         mu_length = 50
         N_min_range = [0.01, 0.1]
         #N_max_range = [70, 90]
-        N_max_range = [200, 450]
+        N_max_range = [200, 600]
         HIS.generateCurve2(parser.parse_args().version, parser.parse_args().save, mu_length, N_min_range, N_max_range)
         #HIS.generateCurveOld(parser.parse_args().generate, parser.parse_args().save, mu_step_size, mu_min, mu_length, N_max_range)
 
