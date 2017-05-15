@@ -244,7 +244,12 @@ class partition2pressure(object):
         self.A3_to_m3 = 1.E-30 # A^3 to m^3
         self.Na = 6.022140857E23 # 1/ mol
         self.gas_const = 0.0083144621 # kJ / (K mol)
+        self.calc_conc = False
         self.calc_rho = False
+        self.calc_phi = False
+        self.calc_num_dens = True
+        self.calc_pressure = True
+        self.calc_lnZ = False
         self.colors = ['red', 'blue', 'green', 'magenta', 'cyan', 
                        'yellow', 'black', 'darkgoldenrod','firebrick', 
                        'purple', 'burlywood', 'chartreuse', 'red', 
@@ -269,16 +274,19 @@ class partition2pressure(object):
             print 'You can only give 1 or 3 entries for the box size'
             
         self.calc_conc = parser.parse_args().concentration
+        self.calc_num_dens = parser.parse_args().num_density
 
-        self.calc_rho = False
         if (parser.parse_args().density):
             self.calc_rho = True
             self.mass = parser.parse_args().density
 
-        self.calc_phi = False
-        if (parser.parse_args().num_beads):
+        elif (parser.parse_args().phi):
             self.calc_phi = True
-            self.J = parser.parse_args().num_beads
+            self.mono_vol = parser.parse_args().phi
+
+        self.calc_pressure = parser.parse_args().pressure
+        self.calc_partition = parser.parse_args().partition
+        self.calc_t_norm = parser.parse_args().t_norm
 
         self.show = parser.parse_args().show_plot
         self.save = parser.parse_args().save_plot
@@ -330,19 +338,35 @@ class partition2pressure(object):
             i += 1
 
         if (self.calc_phi):
-            self.x = self.N * self.J / self.vol
-            self.pressure = lnZ * self.J / self.vol
+            self.x = self.N * self.mono_vol / self.vol
+            if self.calc_pressure:
+                self.pressure = lnZ * self.mono_vol / self.vol
         elif (self.calc_conc):
             self.x = self.N / (self.vol * self.Na * self.A3_to_m3)
-            self.pressure = lnZ * self.temp[t_count] / (self.vol * self.Na * self.A3_to_m3) #* self.gas_const # temp [=] kJ/mol
-            #self.pressure = lnZ * self.kB * self.temp[t_count] * self.convert_kPa / self.vol
+            if self.calc_pressure:
+                self.pressure = lnZ * self.temp[t_count] / (self.vol * self.Na * self.A3_to_m3) #* self.gas_const # temp [=] kJ/mol
+                #self.pressure = lnZ * self.kB * self.temp[t_count] * self.convert_kPa / self.vol
+                if self.calc_t_norm:
+                    self.pressure = self.pressure / self.temp[t_count]
         elif (self.calc_rho):
             self.x = self.N * self.mass / (self.vol * self.Na * self.A3_to_cm3)
-            self.pressure = lnZ * self.temp[t_count] * self.convert_kPa / self.vol
-            #self.pressure = lnZ * self.kB * self.temp[t_count] * self.convert_kPa / self.vol
+            if self.calc_pressure:
+                self.pressure = lnZ * self.temp[t_count] * self.convert_kPa / self.vol
+                if self.calc_t_norm:
+                    self.pressure = self.pressure / self.temp[t_count]
+        elif (self.calc_num_dens):
+            self.x = self.N / self.vol
+            if self.calc_pressure:
+                self.pressure = lnZ * self.temp[t_count] / self.vol
+                if self.calc_t_norm:
+                    self.pressure = self.pressure / self.temp[t_count]
+                #self.pressure = lnZ * self.kB * self.temp[t_count] * self.convert_kPa / self.vol
         else:
             self.x = self.N
+
+        if not self.calc_pressure:
             self.pressure = lnZ
+
     
         pvt_file.close()
         return params
@@ -427,8 +451,8 @@ class partition2pressure(object):
             data = line.strip().split()
             params["temp"].append(float(data[0]))
             params["min_slope"].append(float(data[1]))
-            params["cmc"].append(float(data[3])*self.J/self.vol)
-            params["intercept"].append(float(data[3])*self.J/self.vol * (1 - float(data[1])))
+            params["cmc"].append(float(data[3])*self.mono_vol/self.vol)
+            params["intercept"].append(float(data[3])*self.mono_vol/self.vol * (1 - float(data[1])))
         cmc_file.close()
         return params
     
@@ -442,6 +466,12 @@ class partition2pressure(object):
                 m_gas = self.temp[itemp] #* self.gas_const*1000
             elif (self.calc_rho):
                 m_gas = self.temp[itemp] * self.kB
+            elif (self.calc_num_dens):
+                m_gas = self.temp[itemp] * self.kB
+
+            if (self.calc_t_norm):
+                m_gas = 1.0
+
             m_min = m_gas
             m_best = 0
             ave_x = sum(self.x[:,itemp]) / float(len(self.pressure))
@@ -461,15 +491,16 @@ class partition2pressure(object):
                     m_best = m
                     i_best = [i, i+4]
 
-            # check how close the the pressure obeys the IGEOS
-            print ('min IGEOS deviation(T =%6.2f) = %f' % (self.temp[itemp], m_best))
-            print ('   over a range of points %f - %f' % (self.x[ i_best[0], itemp], self.x[ i_best[1], itemp]))
             if (m_best == 0):
                 self.itemp_skip.append( itemp )
                 print "The maximum slope in your system is either "
                 print "greater than "+str(m_gas)+" or less than 0."
                 print "This does not make sense for calculating cmcs."
                 b_shift = b
+            else:
+                # check how close the the pressure obeys the IGEOS
+                print ('min IGEOS deviation(T =%6.2f) = %f' % (self.temp[itemp], m_best))
+                print ('   over a range of points %f - %f' % (self.x[ i_best[0], itemp], self.x[ i_best[1], itemp]))
                 
             for i in range( len(self.pressure[:,itemp]) ):
                 self.pressure[i, itemp] -= b_shift
@@ -704,7 +735,9 @@ class partition2pressure(object):
         
             if (itemp in self.itemp_skip): continue
            
-            if (self.calc_rho):
+            if self.calc_t_norm:
+                convert = 1.0
+            elif (self.calc_rho):
                 convert = self.temp[itemp] * self.kB 
             elif (self.calc_conc):
                 convert = self.temp[itemp] #* self.gas_const
@@ -769,14 +802,22 @@ def main(argv=None):
                    help='Show the ideal-gas law limiting curve')
     parser.add_argument("-l","--legend", action="store_true",
                    help='Show the legend of temperature curves')
+    parser.add_argument("--partition", action="store_true",
+                   help='Plot the partition function, not the pressure')
+    parser.add_argument("--pressure", action="store_true",
+                   help='Plot the pressure in units corresponding to the x-axis')
+    parser.add_argument("--t_norm", action="store_true",
+                   help='Normalize y-axis by the temperature')
     parser.add_argument("-c","--concentration", action="store_true",
                    help='Plot versus concentration [mM]')
+    parser.add_argument("--phi", type=float,
+                   help='Plot versus volume fraction, give the volume of 1 moiety')
     parser.add_argument("-r","--density", type=float,
                    help='Plot versus density [g/cm3] must give the molar mass')
+    parser.add_argument("--num_density", action="store_true",
+                   help='Plot versus the number density [1/V]')
     parser.add_argument("-o","--output", action="store_true",
                    help='Output files for the cmc and P vs N vs mu')
-    parser.add_argument("-j","--num_beads", type=int,
-                   help='Number of beads for lattice surfactant.')
     parser.add_argument("-m","--cmc_method", type=str, 
                         choices=['finite', 'zero', 'spline', 'intercept',
                                  'curvature', 'sigmoid', 'percent'],

@@ -459,7 +459,7 @@ class hisFile(object):
                     if (self.his[i_bin,e_bin] != 0):
                         writing = True
                     if (writing):
-                        ofile.write("%7.f" % self.his[i_bin,e_bin])
+                        ofile.write("%7.f " % self.his[i_bin,e_bin])
                         l_bin += 1
                         if (l_bin > self.n_e[i_bin]):
                             break
