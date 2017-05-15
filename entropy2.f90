@@ -309,7 +309,7 @@ do while (.not. success)
 	write (1,*) nfiles, npoints, maxpart
 	do ifile = 1,nfiles
 		do isuffix = 1,nsuffix
-			write (1,'(A,g12.4,2f16.6,f13.6,f12.6,f7.1)') trim(filename(ifile)), counts_file(ifile,isuffix), &
+			write (1,'(A,X,g12.4,X,2f16.6,X,f13.6,X,f12.6,X,f7.1)') trim(filename(ifile)), counts_file(ifile,isuffix), &
 				weight(ifile,isuffix),1./beta(ifile,isuffix),mu(ifile,isuffix),width, &
 				g_n(ifile,isuffix)
 		enddo
