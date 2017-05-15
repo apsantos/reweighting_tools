@@ -297,6 +297,8 @@ class hisFile(object):
         self.N_int = N_int
         self.E = E
         self.E_int = E_int
+        if min(N) != 0:
+            print 'min(N) != 0; you should probably get a histogram that does ;)'
         return 0
                     
 
@@ -443,8 +445,8 @@ class hisFile(object):
         T = []
         mu_min = []
         mu_max = []
-        mu_low = -1000
-        mu_high = 1000
+        mu_low = -100000
+        mu_high = 100000
         for i in range( len(self.runs) ):
             read_err = self.read(self.runs[i])
             T_temp = self.getT()
@@ -484,7 +486,7 @@ class hisFile(object):
 
         return mu_min, mu_max, T
 
-    def generateCurve2(self, entropy_version=1, save_file=False, mu_len=30, N_lo=[0.01,0.1],N_hi=[60, 130], max_iter=100):
+    def generateCurve2(self, entropy_version=1, save_file=False, mu_len=30, N_lo=[0.01,0.1],N_hi=[60, 130], max_iter=200):
         """
         Generate a PVT that covers ideal gas and high pressure
         for micellization
@@ -523,6 +525,7 @@ class hisFile(object):
                 else:
                     N_mu_m = part.N[0]
                     break
+
             if (i == max_iter):
                 print 'change the maximum N range!'
                 return
@@ -715,7 +718,6 @@ class hisFile(object):
                     part.readPVTsimple()
 
 
-                    #print part.N[0]
                     if (abs((part.N[0] - Nim) / Nim) < 0.01):
                         mu_step = abs(mu[im] - i_mu[0])
                         #pmN = part.N[0]
@@ -848,8 +850,6 @@ class hisFile(object):
                     if (N_hi_min < N_mu_high < N_hi_max):
                         break
 
-                #print N_mu_high, N_m_low
-
             self.mu_step = mu_step_start
             temp_tot.extend(temp)
             mu_tot.extend(mu)
@@ -891,6 +891,7 @@ class hisFile(object):
         except IOError:
             cp_hs2 = False
 
+        Nmin = 1000
         for i in range( len(self.runs) ):
             read_err = self.read(self.runs[i])
             # find the <N> and <E> from histograms
@@ -898,6 +899,11 @@ class hisFile(object):
             mu.append(self.getmu())
             N.append(self.getNave())
             E.append(self.getEave())
+            if min(self.N) < Nmin:
+                Nmin = min(self.N)
+
+        if Nmin != 0:
+            print 'WARNING none of the histograms go down to N=0'
 
         # run entropy with runs used to develop partition function
         if (version == 2):
@@ -1015,11 +1021,16 @@ def main(argv=None):
                         type=int, choices=[1,2],
                    help='Generate the pvt.dat file for CMC calculation')
     parser.add_argument("-g","--generate", action="store_true",
-                   help='can either use the partiton function generated '
-                        'by entropy[1,2].x.  Assumes 2 if none given.')
+                   help='Use the partiton function generated a nice series mu values for pvt.dat')
     parser.add_argument("-t","--temperature", type=float, nargs="+",
                    help='temperature you want to pvt to be calculated at '
                         'assumed to be all those in the input_file.')
+    parser.add_argument("--N_low", type=float, nargs="+",
+                   help='Lower bound range of N particles in the generation. eg:'
+                        '--N_low 0.01 0.1')
+    parser.add_argument("--N_hi", type=float, nargs="+",
+                   help='Upper bound range of N particles in the generation. eg:'
+                        '--N_hi 50 80')
     parser.add_argument("-s","--save", action="store_true",
                    help='Save the T, mu, N generated.  Use the output without simulationVpartition by:'
                         ' entropy2.x < TmuN_sVp.dat')
@@ -1038,13 +1049,20 @@ def main(argv=None):
 
     if (parser.parse_args().error):
         HIS.calcError(parser.parse_args().version, parser.parse_args().latex)
+
     elif (parser.parse_args().generate):
         mu_step_size = 0.0001
         mu_min = -0.1
         mu_length = 50
-        N_min_range = [0.01, 0.1]
-        #N_max_range = [70, 90]
-        N_max_range = [200, 600]
+        if parser.parse_args().N_low:
+            N_min_range = parser.parse_args().N_low
+        else:
+            N_min_range = [0.01, 0.1]
+        if parser.parse_args().N_hi:
+            N_max_range = parser.parse_args().N_hi
+        else:
+            N_max_range = [100, 150]
+
         HIS.generateCurve2(parser.parse_args().version, parser.parse_args().save, mu_length, N_min_range, N_max_range)
         #HIS.generateCurveOld(parser.parse_args().generate, parser.parse_args().save, mu_step_size, mu_min, mu_length, N_max_range)
 
