@@ -1,0 +1,5 @@
+# mu1p	mu1incr
+-2.0	0.01
+# t_new	mu2min	mu2max	mu2_incr	nl1	nl2	ng1	ng2
+1.1	-5.0	-1.5	0.1	200	200	10	10
+

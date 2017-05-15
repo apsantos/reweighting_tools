@@ -1,0 +1,64 @@
+This set of programs is used to calculate the coexistence and criticality of a binary mixture. The original set of programs has been developed by A. Z. Panagiotopoulos & J. Potoff. Major modifications have been made by A.-P. Hynninen. 
+
+Current versions are: 
+
+- fspatch.f90 v2.11
+- fstxy.f90 v2.21
+- fscrm.f90 v2.12
+- fspvt.f90 v2.11
+
+The programs must be compiled using ifort, and some legacy profiling code has to be removed in order to work properly on modern OS. These changes do not affect the main functionality of the programs. Below is a brief usage description and examples for the input files.
+
+************************
+*** Histogram Format ***
+************************
+Histograms need to be named "his$ia.dat", where $i corresponds to the index of the histogram file. The first line of the histogram is a comment, where the second line of the histogram file provides the following simulation information: 
+
+"T    mu1    mu2    Lx    Ly    Lz"
+ 
+ where T is the system temperature, mu1 & mu2 the chemical potential of species 1 & 2, respectievly, and Lx & Ly & Lz specify the simulation box dimensions. In contrast to the program entropy.f90, the histogram data is provided in a raw format, i.e. each line contains the information on number of particles of species 1 and 2, and the corresponding potential energy. All histogram files of a given set need to contain the exact same number of entries. A typical histogram file looks like this:
+ 
+# T    mu1    mu2    Lx    Ly    Lz
+1.1    -4.0   -3.0   7.5   7.5   7.5
+20      44      -41.7215
+37      45      -79.0061
+40      55      -98.2365
+
+
+***************
+*** FSPATCH ***
+***************
+This program does the actual patching using the Ferrenberg-Swedsen method and needs to be run first. The parameters for this program are given in the first line of the file "inp_fs.dat" in the following format: 
+
+"xi    tol   mentr    trialVec"
+
+where xi is the acceleration parameter of the patching, tol is the tolerance to judge convergence, mentr is the number of entries in the histogram files, and trialVec is the trial vector for estimating the critical point. The rest of "inp_fs.dat" (i.e. line 2 and onwards) contains a list of histograms, where only the file index needs to be specified (i.e. 0a, 1a, 2a et c.). A typical input file looks like this:
+
+0.2	0.01	50001	0.1	0.1	0.1
+0a
+1a
+2a
+3a
+
+In order to keep the computational cost of the patching to a reasonable level, one should try to limit the number of histograms to a number between <40, since the runtime increases as N_files^2. After each iteration, the program outputs the patched surface in the file named "inp_fs2.dat", which is necessary for further processing.
+
+
+*************
+*** FSTXY ***
+*************
+This program calculates the coexistence lines using the data contained in "inp_fs2.dat". The parameters for fstxy.f90 need to be supplied in a file named "inp_txy.dat", which is structured in the following way: the first and third lines are comments, while the actual input parameters are specified in line 2 and 4+. In the second line, the first guess for the coexistence chemical potential of species 1 needs to be specified together with an increment. In lines 4 and following, the search parameters for finding coexistence need to be specified in the following way: 
+
+"t_new    mu2min    mu2max    mu2_incr    nl1    nl2    ng1    ng2"
+
+where t_new is the temperature for which coexistence is searched for, mu2min & mu2max are the minimum & maximum of the search range, respectively, mu2_incr is the increment of mu2, and finally, nl1, nl2, ng1, and ng2 are the initial guesses for the liquid and gas densities of species 1 and 2. A typical input file looks for example like this:
+
+# mu1p	mu1incr
+-3.0	0.01
+# t_new	mu2min	mu2max	mu2_incr	nl1	nl2	ng1	ng2
+1.1	-5.4	-3.0	0.1	200	200	10	10
+
+
+*************
+*** FSCRM ***
+*************
+This program calculates the critical point using the data contained in "inp_fs2.dat" and the trial vector specified in "inp_fs.dat". 
