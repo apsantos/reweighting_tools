@@ -351,6 +351,11 @@ class hisFile(object):
         else:
             self.show_color = False
 
+        if (parser.parse_args().contour_levels):
+            self.contour_levels = parser.parse_args().contour_levels
+        else:
+            self.contour_levels = [10]
+
         return 0
 
     def getNmaxEmin(self, filename):
@@ -624,7 +629,6 @@ class hisFile(object):
 
                 self.show_legend = False
 
-        levels = [10]
         plot_color = 'k'
         plotted_temps = []
         for i in range( len(self.runs) ):
@@ -649,7 +653,7 @@ class hisFile(object):
                     else:
                         plot_color = self.colors[plotted_temps.index(self.temp)]
 
-                CS = plt.contour(X, Y, self.histogram, levels, colors=plot_color)
+                CS = plt.contour(X, Y, self.histogram, self.contour_levels, colors=plot_color)
                 
                 if (self.show_legend):
                     CS.collections[0].set_label(labels[i])
@@ -692,6 +696,8 @@ def main(argv=None):
                         'here give a list of the roots, e.g. - 1a 1b 1c')
     parser.add_argument("-p","--plot_his", action="store_true",
                    help='Plot histograms as contour plots.')
+    parser.add_argument("--contour_levels", type=int, nargs="+",
+                   help='Contour plots freqeuncy level list.')
     parser.add_argument("-n","--plot_nmols", action="store_true",
                    help='Plot the number of moles as a function of steps.')
     parser.add_argument("-e","--plot_energy", action="store_true",
