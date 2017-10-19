@@ -79,6 +79,9 @@ class hisFile(object):
             self.temp_calc = temperature
         else:
             self.temp_calc = []
+        self.Tconv = 1.0
+        self.Muconv = 1.0
+        self.Econv = 1.0
         return
 
     def getmu(self):
@@ -166,6 +169,22 @@ class hisFile(object):
 
     def setNe(self, n_e_bins):
         self.n_e = n_e_bins
+
+    def setTconv(self, unit):
+        if unit == 'K':
+            self.Tconv = 1.0 / 0.8314472
+
+    def setEconv(self, unit):
+        if unit == 'kJ/mol':
+            self.Econv = 0.01
+        elif unit == 'K':
+            self.Econv = 1.2027221933
+
+    def setMuconv(self, unit):
+        if unit == 'kJ/mol':
+            self.Muconv = 0.01
+        elif unit == 'K':
+            self.Muconv = 1.2027221933
 
     def write(self):
         """ There are 2 types of data lines, the 1st has the:
@@ -508,6 +527,7 @@ class hisFile(object):
             print 'generating for T =', T[i_T]
             # Find the max chemical potential
             mu_m = [mu_max[i_T]]
+            mu_range = mu_max[i_T] - mu_min[i_T]
             temp = []
             mu = []
             N = []
@@ -519,9 +539,9 @@ class hisFile(object):
                 part = partition()
                 part.readPVTsimple()
                 if (part.N[0] < N_hi_min):
-                    mu_m[0] = max(mu_m[0]*1.1, mu_m[0]+0.5)
+                    mu_m[0] = max(mu_m[0]+(mu_range*0.01), mu_m[0]+0.5)
                 elif (part.N[0] > N_hi_max):
-                    mu_m[0] = min(mu_m[0]/1.1, mu_m[0]-0.01)
+                    mu_m[0] = min(mu_m[0]-(mu_range*0.05), mu_m[0]-0.01)
                 else:
                     N_mu_m = part.N[0]
                     break
@@ -919,7 +939,7 @@ class hisFile(object):
             for i in range( len(self.runs) ):
                 part.E[i] *= part.N[i]
 
-        print '       run      |   T      mu   |  N_sim    E_sim  |  N_part   E_part |   %e(N)   %e(E)'
+        print '       run      |  kT      mu   |  N_sim    E_sim  |  N_part   E_part |   %e(N)   %e(E)'
         print '----------------+---------------+------------------+------------------+-----------------'
         if write_latex:
             latex_file = open( 'error.tex', 'w')
@@ -928,7 +948,7 @@ class hisFile(object):
             latex_file.write('    \\begin{tabular}{c c | c c | c c | c c}\n')
             latex_file.write('    \hline\n')
             latex_file.write('    \hline\n')
-            latex_file.write('    $T$ & $\mu$ & $\left<N\\right>_{\\text{sim}}$ & '
+            latex_file.write('    $kT$ & $\mu$ & $\left<N\\right>_{\\text{sim}}$ & '
                                                '$\left<E\\right>_{\\text{sim}}$ & '
                                                '$\left<N\\right>_{\ln\\text{Z}}$ & '
                                                '$\left<E\\right>_{\ln \\text{Z}}$ & '
@@ -938,14 +958,13 @@ class hisFile(object):
         for i in range( len(self.runs) ):
             N_err = float(part.N[i] - N[i]) / N[i] * 100.0 
             E_err = float(part.E[i] - E[i]) / (E[i]+1E-8) * 100.0
-            print ('%15s | %6.3f %6.2f | %6.2f %9.3f | %6.2f %9.3f | %7.2f %7.2f' % 
-                  (self.runs[i], T[i], mu[i], N[i], E[i], 
-                  part.N[i], part.E[i], N_err, E_err))
-                  #part.N[i], part.E[i]*part.N[i], N_err, E_err))
+            print ('%15s | %6.3f %6.3f | %6.2f %9.3f | %6.2f %9.3f | %7.2f %7.2f' % 
+                  (self.runs[i], T[i]*self.Tconv, mu[i]*self.Muconv, N[i], E[i]*self.Econv, 
+                  part.N[i], part.E[i]*self.Econv, N_err, E_err))
             if write_latex:
-                latex_file.write('    %6.3f %s %6.2f %s %6.2f %s %9.3f %s %6.2f %s %9.3f %s %7.2f %s %7.2f \\\\\n' % 
-                                ( T[i], '&', mu[i], '&', N[i], '&', E[i], '&',
-                                  part.N[i], '&', part.E[i], '&', N_err, '&', E_err))
+                latex_file.write('    %6.3f %s %6.3f %s %6.2f %s %9.3f %s %6.2f %s %9.3f %s %7.2f %s %7.2f \\\\\n' % 
+                                ( T[i]*self.Tconv, '&', mu[i]*self.Muconv, '&', N[i], '&', E[i]*self.Econv, '&',
+                                  part.N[i], '&', part.E*self.Econv[i], '&', N_err, '&', E_err))
 
         if write_latex:
             latex_file.write('    \hline\n')
@@ -1025,6 +1044,8 @@ def main(argv=None):
     parser.add_argument("-t","--temperature", type=float, nargs="+",
                    help='temperature you want to pvt to be calculated at '
                         'assumed to be all those in the input_file.')
+    parser.add_argument("--Npoints", type=int,
+                   help='Number of points to calculate')
     parser.add_argument("--N_low", type=float, nargs="+",
                    help='Lower bound range of N particles in the generation. eg:'
                         '--N_low 0.01 0.1')
@@ -1036,6 +1057,12 @@ def main(argv=None):
                         ' entropy2.x < TmuN_sVp.dat')
     parser.add_argument("--latex", action="store_true",
                    help='Output error table in latex format/')
+    parser.add_argument("--Tunits", type=str, choices=['K','kT'],
+                   help='Temperature units for output')
+    parser.add_argument("--Eunits", type=str, choices=['kJ/mol', 'K'],
+                   help='Energy units for output (should match Energy units)')
+    parser.add_argument("--Muunits", type=str, choices=['kJ/mol', 'K'],
+                   help='Chemical potential units for output (should match Energy units)')
 
     if (parser.parse_args().input_file):
         runs = readRunsFile(parser.parse_args().input_file)
@@ -1048,12 +1075,18 @@ def main(argv=None):
     HIS = hisFile(runs, parser.parse_args().temperature)
 
     if (parser.parse_args().error):
+        if(parser.parse_args().Tunits): HIS.setTconv( parser.parse_args().Tunits )
+        if(parser.parse_args().Muunits): HIS.setMuconv( parser.parse_args().Muunits )
+        if(parser.parse_args().Eunits): HIS.setEconv( parser.parse_args().Eunits )
         HIS.calcError(parser.parse_args().version, parser.parse_args().latex)
 
     elif (parser.parse_args().generate):
         mu_step_size = 0.0001
         mu_min = -0.1
-        mu_length = 50
+        if parser.parse_args().Npoints:
+            mu_length = parser.parse_args().Npoints
+        else:
+            mu_length = 50
         if parser.parse_args().N_low:
             N_min_range = parser.parse_args().N_low
         else:
