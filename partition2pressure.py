@@ -77,15 +77,16 @@ def getSpline(x, y, n_points=1000):
 
 def maxCurvature(x, y, plot=False):
     kappa_max = 0.0
-    x_spl, y_spl, y_spl_d1, y_spl_d2 = getSpline(x, y)
+    x_spl, y_spl, y_spl_d1, y_spl_d2 = getSpline(x, y, 2000)
     dx = x_spl[2] - x_spl[0]
     dx2 = dx * dx
     kappa_max_e = dx2
     x_max_e = dx2
+    kappa = np.zeros( (len(x_spl)) )
     for i in range(1,len(x_spl)-1):
-        kappa = -(y_spl_d2[i]) / (1 + (y_spl_d1[i])**2.0)**(1.5)
-        if (kappa > kappa_max):
-            kappa_max = kappa
+        kappa[i] = -(y_spl_d2[i]) / (1.0 + (y_spl_d1[i])**2.0)**(1.5)
+        if (kappa[i] > kappa_max):
+            kappa_max = kappa[i]
             y_max = y_spl[i]
             x_max = x_spl[i]
             i_max = i
@@ -103,7 +104,7 @@ def maxCurvature(x, y, plot=False):
         
         plt.show()
 
-    return x_max, x_max_e
+    return x_max, x_max_e, x_spl, y_spl, kappa
 
 def zero2ndDerivativeIntercept(x, y, method='spline', plot=False):
     d2ydx2_min = 10.0
@@ -219,6 +220,10 @@ def linFit(x, y):
 
     D = np.linalg.det([[xx_sum, x_sum], 
                        [x_sum,      n]])
+    if D == 0:
+        print ('lnZ(N) needs to be an independent function, i.e.' +
+              ' change the chemical potential values used')
+        return 0, 0, 0, 0, 0, -1
     slope = np.linalg.det([[xy_sum, x_sum], 
                            [y_sum,      n]])/D
     intercept = np.linalg.det([[xx_sum, xy_sum], 
@@ -232,7 +237,7 @@ def linFit(x, y):
     intercept_std = ( y_std2 * xx_sum / D )**0.5
     r = ( ( n * xy_sum - x_sum * y_sum ) / 
           ( ( n*xx_sum - x_sum**2 ) * ( n*yy_sum - y_sum**2 )  )**0.5)
-    return slope, intercept, slope_std, intercept_std, r
+    return slope, intercept, slope_std, intercept_std, r, 0
 
 class partition2pressure(object):
     """
@@ -461,7 +466,13 @@ class partition2pressure(object):
         m_gas = 1.0
         self.itemp_skip = []
         
+        slope_find_range = 4
         for itemp in range(len(self.temp)):
+            if len(self.pressure) < slope_find_range:
+                print "not enough data points for each temperature"
+                self.itemp_skip.append( itemp )
+                continue
+
             if (self.calc_conc):
                 m_gas = self.temp[itemp] #* self.gas_const*1000
             elif (self.calc_rho):
@@ -475,21 +486,22 @@ class partition2pressure(object):
             m_min = m_gas
             m_best = 0
             ave_x = sum(self.x[:,itemp]) / float(len(self.pressure))
-            for i in range(int( len(self.pressure) - 4 )):
-                x = self.x[i:i+4, itemp]
-                y = self.pressure[i:i+4, itemp]
+            for i in range(int( len(self.pressure) - slope_find_range )):
+                x = self.x[i:i+slope_find_range, itemp]
+                y = self.pressure[i:i+slope_find_range, itemp]
                 # y = mx + b
-                m, b, m_s, b_s, r = linFit(x, y)
+                m, b, m_s, b_s, r, err = linFit(x, y)
+                if err: continue
                 if (i == 0 ):
                     if (self.x[i,itemp] < ave_x):
                         b_shift = b
-                if (i == (len(self.pressure) - 5) ): 
-                    if (self.x[i+4,itemp] < ave_x):
+                if (i == (len(self.pressure) - slope_find_range - 1) ): 
+                    if (self.x[i+slope_find_range,itemp] < ave_x):
                         b_shift = b
 
                 if ( abs(m - m_gas) < abs(m_best - m_gas) ):
                     m_best = m
-                    i_best = [i, i+4]
+                    i_best = [i, i+slope_find_range]
 
             if (m_best == 0):
                 self.itemp_skip.append( itemp )
@@ -527,7 +539,8 @@ class partition2pressure(object):
                 x = self.x[i:i+5, itemp]
                 y = self.pressure[i:i+5, itemp]
                 # y = mx + b
-                m, b, m_s, b_s, r = linFit(x, y)
+                m, b, m_s, b_s, r, err = linFit(x, y)
+                if err: continue
                 if (m < m_min):
                     m_min = m
                     b_min = b
@@ -641,13 +654,28 @@ class partition2pressure(object):
                 border.draw_frame(False)
                 if (self.calc_phi):
                     plt.xlabel("$\phi_{tot}$",fontsize=20)
-                    plt.ylabel("$\Pi$",fontsize=20)
+                    if self.calc_t_norm:
+                        plt.ylabel("$\Pi$",fontsize=20)
+                    else:
+                        plt.ylabel("$\P$",fontsize=20)
                 elif (self.calc_conc):
                     plt.xlabel("$\\rho_{tot}$[mM]",fontsize=20)
-                    plt.ylabel("$P$[kPa]",fontsize=20)
+                    if self.calc_t_norm:
+                        plt.ylabel("$P / kT$",fontsize=20)
+                    else:
+                        plt.ylabel("$P$[kPa]",fontsize=20)
                 elif (self.calc_rho):
                     plt.xlabel("$\\rho_{tot}$[g/cm$^3$]",fontsize=20)
-                    plt.ylabel("$p$[kPa]",fontsize=20)
+                    if self.calc_t_norm:
+                        plt.ylabel("$p / kT$",fontsize=20)
+                    else:
+                        plt.ylabel("$p$[kPa]",fontsize=20)
+                elif self.calc_num_dens:
+                    plt.xlabel("$\\rho_{tot}$",fontsize=20)
+                    if self.calc_t_norm:
+                        plt.ylabel("$p / kT$",fontsize=20)
+                    else:
+                        plt.ylabel("$p$[kPa]",fontsize=20)
                 else:
                     plt.xlabel("N$_{tot}$",fontsize=20)
                     plt.ylabel("ln$\Omega$",fontsize=20)
@@ -666,12 +694,18 @@ class partition2pressure(object):
             if (itemp in self.itemp_skip): continue
 
             n_points = len(self.x)
-            i_cmc, i_cmc_e = maxCurvature(self.x[self.begin_fit:n_points-self.end_fit, itemp], self.pressure[self.begin_fit:n_points-self.end_fit, itemp], False)
+            i_cmc, i_cmc_e, x_spl, p_spl, kappa = maxCurvature(self.x[self.begin_fit:n_points-self.end_fit, itemp], self.pressure[self.begin_fit:n_points-self.end_fit, itemp], False)
             self.cmc.append(i_cmc)
             self.cmc_s.append(i_cmc_e)
             cmc_index = min(range(len(self.x[:,itemp])), key=lambda i: abs(self.x[i,itemp] - self.cmc[itemp]))
             self.mu_cmc.append( self.mu[cmc_index,itemp] )
+            curavture_file = open("Pcurvature" + str(self.temp[itemp]) + ".dat", 'w')
+            curavture_file.write("# rho pressure curvature\n")
+            for i in range( len(kappa)-1):
+                curavture_file.write("%f %f %f\n" % (x_spl[i], p_spl[i], kappa[i]) )
+            curavture_file.close()
         
+            
         return self.cmc, self.cmc_s
     
     def calcCMC2ndD(self):
@@ -693,10 +727,10 @@ class partition2pressure(object):
         return self.cmc, self.cmc_s
     
     def writeCMC(self):
-        cmc_file = open("cmc_part.dat", 'w')
+        cmc_file = open("cmc_" + self.cmc_method + ".dat", 'w')
         if (self.calc_phi):
             cmc_file.write("T   phi_cmc d_phi_cmc    mu_cmc\n")
-        elif (self.calc_rho or self.calc_conc):
+        elif (self.calc_rho or self.calc_conc or self.calc_num_dens):
             cmc_file.write("T   rho_cmc d_rho_cmc    mu_cmc\n")
         else:
             cmc_file.write("T   N_cmc d_N_cmc    mu_cmc\n")
@@ -704,7 +738,7 @@ class partition2pressure(object):
         for itemp in range(len(self.temp)):
             if (itemp in self.itemp_skip): continue
 
-            cmc_file.write("%f %10.8f %10.8f %10.8f\n" % ( self.temp[itemp]/0.008314, 
+            cmc_file.write("%f %10.8f %10.8f %10.8f\n" % ( self.temp[itemp], 
                                                     self.cmc[itemp], self.cmc_s[itemp],
                                                     self.mu_cmc[itemp] ))
 
@@ -714,11 +748,25 @@ class partition2pressure(object):
 
             mu_file = open("PVphiVmu" + str(self.temp[itemp]) + ".dat", 'w')
             if (self.calc_phi):
-                mu_file.write("phi     Pressure   mu\n")
-            elif (self.calc_rho or self.calc_conc):
-                mu_file.write("rho     Pressure   mu\n")
+                mu_file.write("#phi     P/kT       mu\n")
+            elif self.calc_rho:
+                if self.calc_t_norm:
+                    mu_file.write("#rho[g/cm3] P/kT       mu\n")
+                else:
+                    mu_file.write("#rho[g/cm3] P[]        mu\n")
+            elif self.calc_conc:
+                if self.calc_t_norm:
+                    mu_file.write("#rho[mM] P/kT       mu\n")
+                else:
+                    mu_file.write("#rho[mM] P[bar]        mu\n")
+            elif self.calc_num_dens:
+                if self.calc_t_norm:
+                    mu_file.write("#rho     P/kT       mu\n")
+                else:
+                    mu_file.write("#rho     P[atomistic] mu\n")
             else:
-                mu_file.write("N     Pressure   mu\n")
+                mu_file.write("#N     lnZ          mu\n")
+
             for i in range( len(self.pressure[:,itemp]) ):
                 mu_file.write("%10.8f %10.8f %f\n" % (self.x[i, itemp], 
                                                   self.pressure[i, itemp], 
@@ -767,13 +815,28 @@ class partition2pressure(object):
             border.draw_frame(False)
         if (self.calc_phi):
             plt.xlabel("$\phi_{tot}$",fontsize=20)
-            plt.ylabel("$\Pi$",fontsize=20)
+            if self.calc_t_norm:
+                plt.ylabel("$\Pi$",fontsize=20)
+            else:
+                plt.ylabel("$\P$",fontsize=20)
         elif (self.calc_conc):
             plt.xlabel("$\\rho_{tot}$[mM]",fontsize=20)
-            plt.ylabel("$P$[kPa]",fontsize=20)
+            if self.calc_t_norm:
+                plt.ylabel("$P / kT$",fontsize=20)
+            else:
+                plt.ylabel("$P$[kPa]",fontsize=20)
         elif (self.calc_rho):
             plt.xlabel("$\\rho_{tot}$[g/cm$^3$]",fontsize=20)
-            plt.ylabel("$P$[kPa]",fontsize=20)
+            if self.calc_t_norm:
+                plt.ylabel("$p / kT$",fontsize=20)
+            else:
+                plt.ylabel("$p$[kPa]",fontsize=20)
+        elif self.calc_num_dens:
+            plt.xlabel("$\\rho_{tot}$",fontsize=20)
+            if self.calc_t_norm:
+                plt.ylabel("$p / kT$",fontsize=20)
+            else:
+                plt.ylabel("$p$[kPa]",fontsize=20)
         else:
             plt.xlabel("N$_{tot}$",fontsize=20)
             plt.ylabel("ln$\Omega$",fontsize=20)
