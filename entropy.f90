@@ -43,8 +43,8 @@ real, allocatable:: sum_counts(:)   !
 real*8              beta,mu         ! temperature, chemical potential
 real                width           ! increment of energy distributions in each file
 real                width1          ! width1 makes sure that all widths are the same
-character(20),allocatable:: filename(:)     ! histogram file name - if the form his?????.dat; only the ????? part is stored
-character(20) file_aux  ! auxiliary filename
+character(30),allocatable:: filename(:)     ! histogram file name - if the form his?????.dat; only the ????? part is stored
+character(30) file_aux  ! auxiliary filename
 integer nfiles,ifile        ! how many files being read
 integer iostat              ! iostat becomes -1 on end-of-file
 

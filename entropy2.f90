@@ -50,7 +50,7 @@ real max_x, min_x, avg_x	! limits of x, average x
 integer index				! index for x	
 real ncrit				! number of points for p_l
 real variance				! variance of p_l
-character(20), allocatable :: filename(:)	! histogram file name - if the form his?????.dat; only the ????? part is stored
+character(30), allocatable :: filename(:)	! histogram file name - if the form his?????.dat; only the ????? part is stored
 real, allocatable :: weight(:,:)		! f_n in Ferr. + Swed. paper
 real, allocatable :: oldweight(:,:)  	! old weight
 real ln_num_P				! Log of Numerator for P(S,K) in eq. (3) of Ferr. + Swed. paper
