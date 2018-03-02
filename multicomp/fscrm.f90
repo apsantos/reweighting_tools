@@ -273,7 +273,7 @@ do while (k.eq.0)
     do ipart = min_part1,max_part1
         avgnum1 = avgnum1 + ipart * dens1(ipart)/Z
         ngas1 = ngas1 + ipart * dens1(ipart)/Z
-        if (dens1(ipart)>1e-99) write (24,'(i5,g12.3)') ipart,dens1(ipart)
+        if (dens1(ipart)>1d-99) write (24,'(i5,g12.3)') ipart,dens1(ipart)
     enddo
     close(24)
 
@@ -285,7 +285,7 @@ do while (k.eq.0)
     do ipart = min_part2,max_part2
         avgnum2 = avgnum2 + ipart * dens2(ipart)/Z 
         ngas2 = ngas2 + ipart * dens2(ipart)/Z
-        if (dens2(ipart)>1e-99) write (24,'(i5,g12.3)') ipart,dens2(ipart)
+        if (dens2(ipart)>1d-99) write (24,'(i5,g12.3)') ipart,dens2(ipart)
     enddo
     close(24)
   
