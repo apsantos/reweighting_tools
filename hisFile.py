@@ -193,16 +193,18 @@ class inputFile(object):
         header = ifile.readline().strip().split()
 
         self.nsteps = []
-        self.nmols = []
+        self.nmols = [] 
+        for ispecies in range(len(self.n_collumn)):
+            self.nmols.append([])
         self.energy = []
         i_line = 0
         for line in ifile:
             data = line.strip().split()
             if i_line >= start_line and i_line < 500000:
                 if (data[0] != "#"):
-                    	self.nmols.append( int(float(data[self.n_collumn])) )
-                    	#for ispecies in n_collumn[1:]:
-                    	#    self.nmols[len(self.nmols) - 1] += int(float(data[ispecies]))
+                    	#self.nmols.append( int(float(data[self.n_collumn])) )
+                    	for ispecies in range(len(self.n_collumn)):
+                    	    self.nmols[ispecies].append( int(float( data[ self.n_collumn[ispecies] ] )) )
 
                     	self.energy.append( float(data[self.e_collumn]) )
 
@@ -324,12 +326,13 @@ class hisFile(object):
                 self.inFile.e_collumn = parser.parse_args().e_collumn
                 self.inFile.n_collumn = parser.parse_args().n_collumn
                 self.inFile.temperature = parser.parse_args().temperature /0.83144621
-                self.inFile.mu = [parser.parse_args().chem_pot]
+                self.inFile.mu = parser.parse_args().chem_pot
                 self.inFile.box = [parser.parse_args().box, parser.parse_args().box, parser.parse_args().box]
 
             #self.runname = parser.parse_args().write_his
-            self.inFile.setWidth(parser.parse_args().his_width)
-            self.setWidth(parser.parse_args().his_width)
+            if len(self.inFile.n_collumn) == 1:
+                self.inFile.setWidth(parser.parse_args().his_width)
+                self.setWidth(parser.parse_args().his_width)
 
         if (parser.parse_args().start_line):
             self.start_line = parser.parse_args().start_line
@@ -409,7 +412,7 @@ class hisFile(object):
         self.temp = temperature
 
     def setMu(self, mu):
-        self.mu = mu[0]
+        self.mu = mu
 
     def setWidth(self, width):
         self.width = width
@@ -426,7 +429,33 @@ class hisFile(object):
     def setNe(self, n_e_bins):
         self.n_e = n_e_bins
 
-    def write(self):
+    def writeTwoComponent(self):
+        """ 
+        Write a histogram from the Cassandra output property file for the 2-component histogram reweighting
+        """
+        readErr = self.inFile.read(self.start_line)
+        if (readErr > 0):
+            return
+
+        box = self.inFile.getBox()
+        self.setBox(box[0], box[1], box[2])
+        self.setMu(self.inFile.getMu())
+        self.setTemp(self.inFile.getTemp() )
+
+        for file_root in self.runs:
+            # open the file
+            filename = 'his' + file_root + 'a.dat'
+            ofile = open('./' + filename, 'w')
+
+            # write header information
+            ofile.write('# T    mu1    mu2    Lx    Ly    Lz\n')
+            ofile.write("%12.6f %14.6f %22.12f %10f %10f %10f\n" % ( self.temp, self.mu[0], self.mu[1], self.box[0], self.box[1], self.box[2] ))
+            for i in range(len(self.inFile.energy)):
+                ofile.write('%8d %8d %14.6f\n' % ( self.inFile.nmols[0][i], self.inFile.nmols[1][i], self.inFile.energy[i]))
+
+        ofile.close()
+
+    def writeOneComponent(self):
         """ There are 2 types of data lines, the 1st has the:
             N (number of particles)
             n_E_bin (number of energy bins)
@@ -454,7 +483,7 @@ class hisFile(object):
     
             # write header information
             ofile.write('T       mu          width     x- y- zdim  \n')
-            ofile.write("%12.6f %14.6f %22.12f %10f %10f %10f\n" % ( self.temp, self.mu, self.width, self.box[0], self.box[1], self.box[2] ))
+            ofile.write("%12.6f %14.6f %22.12f %10f %10f %10f\n" % ( self.temp, self.mu[0], self.width, self.box[0], self.box[1], self.box[2] ))
     
             for i_bin in range( len(self.his[:,0]) ):
                 ofile.write("%7i %7i %7.5f\n" % (self.n_bins[i_bin], self.n_e[i_bin], self.e_start[i_bin]))
@@ -502,7 +531,8 @@ class hisFile(object):
         self.temp = float(data[0])
         if (self.temp not in self.temp_list):
             self.temp_list.append(self.temp)
-        self.mu = float(data[1])
+        self.mu = [0]
+        self.mu[0] = float(data[1])
         self.his_width = float(data[2])
 
         # if the header was cutoff to a new line
@@ -584,7 +614,7 @@ class hisFile(object):
             if (read_err == 0):
                 labels.append('$T=%s, \mu=%s$' % (T, mu))
                 if (EorN == 'N'):
-                    y = inFile.nmols
+                    y = inFile.nmols[0]
                 else:
                     y = inFile.energy
 
@@ -618,14 +648,15 @@ class hisFile(object):
             plt.ylabel("$N$", fontsize=25)
 
         if (self.show_legend or self.show_color):
-            if (len(self.runs) > 6):
-                print("Legend cannot show more than 7 entries, turning off")
+            if (len(self.runs) > 10):
+                print("Legend cannot show more than 10 entries, turning off the legend")
                 if (len(self.temp_list) <= 13):
                     if (self.show_legend):
                         legend_temp = True
                         temp_labels = [0] * len(self.temp_list)
                     if (self.show_color):
                         color_temp = True
+                        self.show_color = False
 
                 self.show_legend = False
 
@@ -643,7 +674,7 @@ class hisFile(object):
                     plot_color = self.colors[i]
 
                 if (self.show_legend):
-                    labels[i] = '%s: $T=%s, \mu$=%s' % (self.runs[i], self.temp, self.mu)
+                    labels[i] = '%s: $T=%s, \mu$=%s' % (self.runs[i], self.temp, self.mu[0])
                     plot_color = self.colors[i]
 
                 elif (legend_temp or color_temp):
@@ -718,9 +749,9 @@ def main(argv=None):
                    help='Number of beads for lattice surfactant.')
     parser.add_argument("--e_collumn", type=int,
                    help='The collumn number with the energy (starts with 0) (dimensionless).')
-    parser.add_argument("--n_collumn", type=int,
+    parser.add_argument("--n_collumn", type=int, nargs='*',
                    help='The collumn number with the no. of molecules (starts with 0.')
-    parser.add_argument("--chem_pot", type=float,
+    parser.add_argument("--chem_pot", type=float, nargs='*',
                    help='The chemical potential (dimensionless)')
     parser.add_argument("--temperature", type=float,
                    help='The temperature (dimensionless)')
@@ -734,7 +765,10 @@ def main(argv=None):
         return
 
     if (parser.parse_args().write_his):
-        HIS.write()
+        if len( parser.parse_args().n_collumn ) == 1:
+            HIS.writeOneComponent()
+        elif len( parser.parse_args().n_collumn ) == 2:
+            HIS.writeTwoComponent()
 
     if parser.parse_args().plot_his:
         HIS.plot()
