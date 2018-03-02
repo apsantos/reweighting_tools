@@ -77,7 +77,7 @@ def getSpline(x, y, n_points=1000):
 
 def maxCurvature(x, y, plot=False):
     kappa_max = 0.0
-    x_spl, y_spl, y_spl_d1, y_spl_d2 = getSpline(x, y, 2000)
+    x_spl, y_spl, y_spl_d1, y_spl_d2 = getSpline(x, y, 1000)
     dx = x_spl[2] - x_spl[0]
     dx2 = dx * dx
     kappa_max_e = dx2
@@ -247,6 +247,8 @@ class partition2pressure(object):
         self.kB = 1.38064852E-23 # J K-1
         self.convert_kPa = 1.E27 # J / A^3 to kPa
         self.A3_to_m3 = 1.E-30 # A^3 to m^3
+        self.atomic_to_kJmol = 100.0
+        self.bar_to_kPa = 100.0
         self.Na = 6.022140857E23 # 1/ mol
         self.gas_const = 0.0083144621 # kJ / (K mol)
         self.calc_conc = False
@@ -349,7 +351,7 @@ class partition2pressure(object):
         elif (self.calc_conc):
             self.x = self.N / (self.vol * self.Na * self.A3_to_m3)
             if self.calc_pressure:
-                self.pressure = lnZ * self.temp[t_count] / (self.vol * self.Na * self.A3_to_m3) #* self.gas_const # temp [=] kJ/mol
+                self.pressure = lnZ * self.temp[t_count] / (self.vol * self.Na * self.A3_to_m3 * self.atomic_to_kJmol * self.bar_to_kPa) #* self.gas_const # temp [=] kJ/mol
                 #self.pressure = lnZ * self.kB * self.temp[t_count] * self.convert_kPa / self.vol
                 if self.calc_t_norm:
                     self.pressure = self.pressure / self.temp[t_count]
@@ -802,10 +804,12 @@ class partition2pressure(object):
                 if (self.show_gas):
                     x = np.array([0.0, self.cmc[itemp]])
                     plt.plot(x, convert * x, '-k', lw=2.1)
-                    plt.plot([self.cmc[itemp], self.cmc[itemp]], convert * x, '--k')
+                    plt.plot([self.cmc[itemp], self.cmc[itemp]], [0, max(y)], '--k')
+                    #plt.plot([self.cmc[itemp], self.cmc[itemp]], convert * x, '--k')
                 else:
                     x = np.array([0.0, self.cmc[itemp]*1.5])
-                    plt.plot([self.cmc[itemp], self.cmc[itemp]], convert * x, '--k')
+                    plt.plot([self.cmc[itemp], self.cmc[itemp]], [0, max(y)], '--k')
+                    #plt.plot([self.cmc[itemp], self.cmc[itemp]], convert * x, '--k')
                 #x = np.array([self.cmc[itemp], max(self.x[:, itemp])])
                 #plt.plot(x, self.cmc*np.ones((len(x),1)), 'k')
 
