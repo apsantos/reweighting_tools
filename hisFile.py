@@ -3,6 +3,7 @@ import sys, argparse
 import math as ma
 import matplotlib as mpl
 import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import axes3d
 import numpy as np
 # from scipy.sparse import coo_matrix 
 mpl.rcParams['legend.fontsize'] = 20
@@ -712,6 +713,96 @@ class hisFile(object):
 
         return
 
+    def plotTwoComponent(self):
+        legend_temp = False
+        color_temp = False
+        labels = [0] * len(self.runs)
+        fig = plt.figure()
+        ax = fig.add_subplot(111, projection='3d')
+        ax.set_xlabel("$N_2$", fontsize=15)
+        ax.set_ylabel("$N_1$", fontsize=15)
+        ax.set_zlabel("$E$", fontsize=15)
+
+        if (self.show_legend or self.show_color):
+            if (len(self.runs) > 10):
+                print("Legend cannot show more than 10 entries, turning off the legend")
+                if (len(self.temp_list) <= 13):
+                    if (self.show_legend):
+                        legend_temp = True
+                        temp_labels = [0] * len(self.temp_list)
+                    if (self.show_color):
+                        color_temp = True
+                        self.show_color = False
+
+                self.show_legend = False
+
+        plot_color = 'k'
+        plotted_temps = []
+        i = 0
+        for file_root in self.runs:
+            # open file and get the number of lines
+            ifile = open('his'+file_root+'.dat', 'r')
+            ifile.readline()
+            ifile.readline()
+            nlines = 0
+            for line in ifile: 
+                nlines += 1
+            ifile.close()
+            # get data
+            ifile = open('his'+file_root+'.dat', 'r')
+            ifile.readline()
+            header = ifile.readline().strip().split()
+            T = float( header[0] )
+            mu1 = float( header[1] )
+            mu2 = float( header[2] )
+            L = np.zeros((3))
+            L[0] = float( header[3] )
+            L[1] = float( header[4] )
+            L[2] = float( header[5] )
+            
+            n1 = np.zeros((nlines), np.int)
+            n2 = np.zeros((nlines), np.int)
+            e = np.zeros((nlines), np.float)
+            iline = 0
+            for line in ifile: 
+                data = line.strip().split() 
+                tn1 = int(data[0])
+                tn2 = int(data[1])
+                n1[iline] = tn1
+                n2[iline] = tn2
+                e[iline] = float(data[2])
+                iline += 1
+            ifile.close()
+            
+            if (self.show_color):
+                plot_color = self.colors[i]
+
+            if (self.show_legend):
+                labels[i] = '%s: $T=%s, \mu_{DS}=$-%s, $\mu_{Na}$=-%s' % (file_root, T, mu1, mu2)
+                plot_color = self.colors[i]
+
+            elif (legend_temp or color_temp):
+                if (self.temp not in plotted_temps):
+                    plot_color = self.colors[len(plotted_temps)]
+
+                else:
+                    plot_color = self.colors[plotted_temps.index(self.temp)]
+
+            cset = ax.scatter(n1, n2, e, s=3, c=plot_color, marker='o', label=labels[i])
+
+            i += 1
+
+        if (self.show_legend or legend_temp):
+            # 2 9 1
+            # 6   5
+            # 3 ? 4
+
+            ax.legend(fontsize=15)
+
+        plt.show()
+
+        return
+
     def reduceHis(self):
         for i in range( len(self.runs) ):
             read_err = self.read(self.runs[i])
@@ -771,7 +862,10 @@ def main(argv=None):
             HIS.writeTwoComponent()
 
     if parser.parse_args().plot_his:
-        HIS.plot()
+        if len( parser.parse_args().n_collumn ) == 1:
+            HIS.plot()
+        elif len( parser.parse_args().n_collumn ) == 2:
+            HIS.plotTwoComponent()
 
     if (parser.parse_args().write_his == 'cassandra'):
         if parser.parse_args().plot_nmols:
