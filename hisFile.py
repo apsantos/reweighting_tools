@@ -716,8 +716,8 @@ class hisFile(object):
     def plotTwoComponent(self):
         legend_temp = False
         color_temp = False
-        labels = [0] * len(self.runs)
-        fig = plt.figure()
+        labels = [""] * len(self.runs)
+        fig = plt.figure(figsize=(9,5))
         ax = fig.add_subplot(111, projection='3d')
         ax.set_xlabel("$N_2$", fontsize=15)
         ax.set_ylabel("$N_1$", fontsize=15)
@@ -782,11 +782,13 @@ class hisFile(object):
                 plot_color = self.colors[i]
 
             elif (legend_temp or color_temp):
-                if (self.temp not in plotted_temps):
+                if (T not in plotted_temps):
                     plot_color = self.colors[len(plotted_temps)]
+                    labels[i] = '%s: $T$=%s' % (file_root, T)
+                    plotted_temps.append( T )
 
                 else:
-                    plot_color = self.colors[plotted_temps.index(self.temp)]
+                    plot_color = self.colors[plotted_temps.index(T)]
 
             ax.scatter(n1, n2, e, s=3, c=plot_color, marker='o', label=labels[i], edgecolors='none')
 
@@ -796,8 +798,20 @@ class hisFile(object):
             # 2 9 1
             # 6   5
             # 3 ? 4
-            ax.legend(fontsize=15)
+            ax.legend(bbox_to_anchor=(1, 0.5), loc='center left', fontsize=11)
 
+        ticklabelsize = 14
+        for tick in ax.xaxis.get_major_ticks():
+            tick.label.set_fontsize( ticklabelsize ) 
+        for tick in ax.yaxis.get_major_ticks():
+            tick.label.set_fontsize( ticklabelsize ) 
+        for tick in ax.zaxis.get_major_ticks():
+            tick.label.set_fontsize( ticklabelsize ) 
+
+        plt.gcf().subplots_adjust(bottom=0.08)
+        plt.gcf().subplots_adjust(left=0.08)
+        plt.gcf().subplots_adjust(right=0.6)
+        plt.gcf().subplots_adjust(top=0.95)
         plt.show()
 
         return
