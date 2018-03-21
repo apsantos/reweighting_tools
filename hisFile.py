@@ -788,7 +788,7 @@ class hisFile(object):
                 else:
                     plot_color = self.colors[plotted_temps.index(self.temp)]
 
-            cset = ax.scatter(n1, n2, e, s=3, c=plot_color, marker='o', label=labels[i])
+            ax.scatter(n1, n2, e, s=3, c=plot_color, marker='o', label=labels[i], edgecolors='none')
 
             i += 1
 
@@ -796,7 +796,6 @@ class hisFile(object):
             # 2 9 1
             # 6   5
             # 3 ? 4
-
             ax.legend(fontsize=15)
 
         plt.show()
