@@ -372,7 +372,7 @@ write(*,'(A,<nfiles>g11.3)') ' Final weights: ', weight(1:nfiles)
 open(unit=24, file='inp_fs2.dat',status='unknown')
 write(24,*) nfiles, trial_vec(1:3)
 do ifile=1,nfiles
-    write(24,'(A5,f10.0,g15.6,3f14.5)') filename(ifile),nentry(ifile),weight(ifile),&
+    write(24,'(A12,f10.0,g15.6,3f14.5)') filename(ifile),nentry(ifile),weight(ifile),&
     1./beta(ifile),mu1(ifile),mu2(ifile)
 enddo
 write(24,'(i5,f8.4,A)') iter,maxd,'  ! total iterations, deviation '
