@@ -199,9 +199,14 @@ class inputFile(object):
             self.nmols.append([])
         self.energy = []
         i_line = 0
+        max_collumn = max( max(self.n_collumn), self.e_collumn)
         for line in ifile:
             data = line.strip().split()
-            if i_line >= start_line and i_line < 500000:
+            nc = len(data)
+            if nc <= max_collumn or i_line >= end_line: 
+                break
+
+            elif i_line >= start_line:
                 if (data[0] != "#"):
                     	#self.nmols.append( int(float(data[self.n_collumn])) )
                     	for ispecies in range(len(self.n_collumn)):
@@ -209,7 +214,6 @@ class inputFile(object):
 
                     	self.energy.append( float(data[self.e_collumn]) )
 
-            if (i_line >= end_line): break
 
             i_line += 1
 
