@@ -359,6 +359,11 @@ class hisFile(object):
         else:
             self.show_color = False
 
+        if (parser.parse_args().plot_n1_equals_n2):
+            self.plot_n1_equals_n2 = parser.parse_args().plot_n1_equals_n2
+        else:
+            self.plot_n1_equals_n2 = False
+
         if (parser.parse_args().contour_levels):
             self.contour_levels = parser.parse_args().contour_levels
         else:
@@ -743,6 +748,9 @@ class hisFile(object):
         plot_color = 'k'
         plotted_temps = []
         i = 0
+        min_e = 1000.
+        max_e = -1000.
+        max_n = 0
         for file_root in self.runs:
             # open file and get the number of lines
             ifile = open('his'+file_root+'.dat', 'r')
@@ -775,6 +783,9 @@ class hisFile(object):
                 n1[iline] = tn1
                 n2[iline] = tn2
                 e[iline] = float(data[2])
+                max_e = max(max_e, e[iline])
+                min_e = min(min_e, e[iline])
+                max_n = max(max_n, n1[iline], n2[iline])
                 iline += 1
             ifile.close()
             
@@ -798,6 +809,11 @@ class hisFile(object):
 
             i += 1
 
+        if self.plot_n1_equals_n2:
+            xx = np.array([[0, max_n], [0, max_n]])
+            zz = np.array([[min_e, min_e], [max_e, max_e]])
+            ax.plot_surface(xx,xx,zz, color='red', alpha=0.5)
+
         if (self.show_legend or legend_temp):
             # 2 9 1
             # 6   5
@@ -811,6 +827,7 @@ class hisFile(object):
             tick.label.set_fontsize( ticklabelsize ) 
         for tick in ax.zaxis.get_major_ticks():
             tick.label.set_fontsize( ticklabelsize ) 
+        ax.set_zlim(min_e, max_e)
 
         plt.gcf().subplots_adjust(bottom=0.08)
         plt.gcf().subplots_adjust(left=0.08)
@@ -837,6 +854,8 @@ def main(argv=None):
                    help='Plot histograms as contour plots.')
     parser.add_argument("--contour_levels", type=int, nargs="+",
                    help='Contour plots freqeuncy level list.')
+    parser.add_argument("--plot_n1_equals_n2", action="store_true",
+                   help='Plot a plane where n1=n2.  Good for electroneutrality.')
     parser.add_argument("-n","--plot_nmols", action="store_true",
                    help='Plot the number of moles as a function of steps.')
     parser.add_argument("-e","--plot_energy", action="store_true",
