@@ -12,7 +12,7 @@ import subprocess
 import numpy as np
 import math as ma
 from scipy import interpolate
-from scipy.optimize import curve_fit
+from scipy.optimize import fsolve
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 
@@ -44,7 +44,25 @@ def runEntropy2(T, mu, N):
     subprocess.Popen("ls", shell=True, stdout=subprocess.PIPE)
     os.remove('tmp.dat')
 
-def readRunsFile(filename, skiplines=0):
+def runFSPVT(T, mu1, mu2):
+    feed_file = open('inp_pvt.dat', 'w')
+    for i in range( len(mu1) ):
+        feed_file.write('%f %f %f\n' % (T[i], mu1[i], mu2[i]))
+
+    proc = subprocess.Popen("fspvt.x", shell=True, stdout=subprocess.PIPE)
+    feed_file.close()
+    proc.wait()
+    subprocess.Popen("ls", shell=True, stdout=subprocess.PIPE)
+
+def readRunsFile(filename, version, skiplines=0):
+    if version == "entropy":
+        return readOneComponentRunsFile(filename, skiplines)
+    elif version == "entropy2":
+        return readOneComponentRunsFile(filename, skiplines)
+    elif version == "fspvt":
+        return readTwoComponentRunsFile(filename, skiplines)
+
+def readOneComponentRunsFile(filename, skiplines=0):
     # open the file
     try:
         ifile = open('./' + filename, 'r')
@@ -67,6 +85,22 @@ def readRunsFile(filename, skiplines=0):
         
     return runs
         
+def readTwoComponentRunsFile(filename, skiplines=0):
+    # open the file
+    try:
+        ifile = open('./' + filename, 'r')
+
+    except IOError:
+        raise IOError('cannot find: %s' % filename)
+
+    # read the header
+    ifile.readline()
+    runs = []
+    for line in ifile:
+        runs.append( line.strip().split()[0] )
+        
+    return runs
+        
 class hisFile(object):
     """
     Read and plot histogram(s) as a COO sparse matrix
@@ -84,23 +118,39 @@ class hisFile(object):
         self.Econv = 1.0
         return
 
-    def getmu(self):
-        return self.mu
+    def getmu1(self):
+        return self.mu1
+
+    def getmu2(self):
+        return self.mu2
 
     def getT(self):
         return self.temp
 
-    def getEave(self):
-        ave = 0
-        for i in range(len(self.histogram[0,:])):
-            ave += self.E[i] * sum(self.histogram[:,i]) 
-        return ave / float(self.his_sum)
+    def getEave(self, n_components):
+        if n_components == 1:
+            ave = 0
+            for i in range(len(self.histogram[0,:])):
+                ave += self.E[i] * sum(self.histogram[:,i]) 
+            return ave / float(self.his_sum)
+        elif n_components == 2:
+            return np.mean( self.E )
 
-    def getNave(self):
-        ave = 0
-        for iN in range(len(self.histogram[:,0])):
-            ave += iN * sum(self.histogram[iN,:]) / float(self.his_sum)
-        return ave
+    def getN1ave(self, n_components):
+        if n_components == 1:
+            ave = 0
+            for iN in range(len(self.histogram[:,0])):
+                ave += iN * sum(self.histogram[iN,:]) / float(self.his_sum)
+            return ave
+        elif n_components == 2:
+            return np.mean( self.N1 )
+
+    def getN2ave(self, n_components):
+        if n_components == 2:
+            return np.mean( self.N2 )
+        else:
+            print 'Cannot getN2ave, if there is only 1 component'
+            return None
 
     def getNmaxEmin(self, filename):
         # open the file
@@ -143,6 +193,38 @@ class hisFile(object):
 
         return N_max, E_min, E_max
 
+    def getN12maxEmin(self, filename):
+        # open the file
+        try:
+            ifile = open('./' + filename, 'r')
+
+        except IOError:
+            raise IOError('cannot find: %s' % filename)
+
+        header_text = ifile.readline()
+        header = ifile.readline()
+
+        N_line = True
+        N1_max = 0 
+        N2_max = 0 
+        E_min = 10000
+        E_max = -5000 
+        for line in ifile:
+            data = line.strip().split()
+            N1 = float(data[0])
+            N1_max = max(N1, N1_max)
+
+            N2 = float(data[1])
+            N2_max = max(N2, N2_max)
+
+            E = float(data[2])
+            E_max = max(E, E_max)
+            E_min = min(E, E_min)
+                    
+        ifile.close()
+
+        return N1_max, N2_max, E_min, E_max
+
     def setJ(self, J):
         self.J = J
 
@@ -152,8 +234,8 @@ class hisFile(object):
     def setTemp(self, temperature):
         self.temp = temperature
 
-    def setMu(self, mu):
-        self.mu = mu[0]
+    def setMu(self, mu1):
+        self.mu1 = mu1[0]
 
     def setWidth(self, width):
         self.width = width
@@ -201,7 +283,7 @@ class hisFile(object):
     
             # write header information
             ofile.write('T       mu          width     x- y- zdim  \n')
-            ofile.write("%12.6f %14.6f %22.12f %10f %10f %10f\n" % ( self.temp, self.mu, self.width, self.box[0], self.box[1], self.box[2] ))
+            ofile.write("%12.6f %14.6f %22.12f %10f %10f %10f\n" % ( self.temp, self.mu1, self.width, self.box[0], self.box[1], self.box[2] ))
     
             for i_bin in range( len(self.his[:,0]) ):
                 ofile.write("%7i %7i %7.5f\n" % (self.n_bins[i_bin], self.n_e[i_bin], self.e_start[i_bin]))
@@ -224,7 +306,7 @@ class hisFile(object):
     
             ofile.close()
 
-    def read(self, file_root):
+    def readOneComponent(self, file_root):
         """ There are 2 types of data lines, the 1st has the:
             N (number of particles)
             n_E_bin (number of energy bins)
@@ -249,7 +331,7 @@ class hisFile(object):
         self.temp = float(data[0])
         if (self.temp not in self.temp_list):
             self.temp_list.append(self.temp)
-        self.mu = float(data[1])
+        self.mu1 = float(data[1])
         self.his_width = float(data[2])
 
         # if the header was cutoff to a new line
@@ -320,6 +402,58 @@ class hisFile(object):
             print 'min(N) != 0; you should probably get a histogram that does ;)'
         return 0
                     
+    def readTwoComponent(self, file_root):
+        """ two-component histogram with a line for each instance of 
+            N1 (number of particles type 1)
+            N2 (number of particles type 2)
+            Energy
+        """
+        # open the file
+        filename = 'his' + file_root + '.dat'
+
+        try:
+            ifile = open('./' + filename, 'r')
+
+        except IOError:
+            raise IOError('cannot find: %s' % filename)
+            return 1
+        
+        header_text = ifile.readline()
+        header = ifile.readline()
+        data = header.strip().split()
+        self.temp = float(data[0])
+        if (self.temp not in self.temp_list):
+            self.temp_list.append(self.temp)
+        self.mu1 = float(data[1])
+        self.mu2 = float(data[2])
+        self.L = []
+        for dim in range(3):
+            self.L.append(float(data[dim + 3]) )
+
+        N1 = []
+        N2 = []
+        E = []
+        #N1_max = 0 
+        #N2_max = 0 
+        #E_min = 10000
+        #E_max = -5000 
+        for line in ifile:
+            data = line.strip().split()
+            N1.append( int(data[0]) )
+            #N1_max = max(N1, N1_max)
+
+            N2.append( int(data[1]) )
+            #N2_max = max(N2, N2_max)
+
+            E.append( float(data[2]) )
+            #E_max = max(E, E_max)
+            #E_min = min(E, E_min)
+
+        self.N1 = np.array(N1)
+        self.N2 = np.array(N2)
+        self.E = np.array(E)
+
+        return 0
 
     def plot(self, show=False, legend=False, plot_phi=False):
         legend_temp = False
@@ -345,7 +479,7 @@ class hisFile(object):
         plot_color = 'k'
         plotted_temps = []
         for i in range( len(self.runs) ):
-            read_err = self.read(self.runs[i])
+            read_err = self.readOneComponent(self.runs[i])
             if (read_err == 0):
                 if (plot_phi):
                     X, Y = np.meshgrid(self.E, self.phi)
@@ -353,7 +487,7 @@ class hisFile(object):
                     X, Y = np.meshgrid(self.E, self.N)
 
                 if (legend):
-                    labels[i] = '%s: T=%s, $\mu$=%s' % (self.runs[i], self.temp, self.mu)
+                    labels[i] = '%s: T=%s, $\mu$=%s' % (self.runs[i], self.temp, self.mu1)
                     plot_color = colors[i]
 
                 elif (legend_temp):
@@ -423,9 +557,9 @@ class hisFile(object):
         T = []
         mu_max = []
         for i in range( len(self.runs) ):
-            read_err = self.read(self.runs[i])
+            read_err = self.readOneComponent(self.runs[i])
             T_temp = self.getT()
-            mu_temp = self.getmu()
+            mu_temp = self.getmu1()
                 
             if (T_temp not in T):
                 if (self.temp_calc):
@@ -457,7 +591,7 @@ class hisFile(object):
 
         return mu_max, T
 
-    def getMuMinMaxT(self):
+    def getMuMinMaxToneComponent(self):
         """
         Get the runs' temperature list and number of mu
         """
@@ -467,9 +601,9 @@ class hisFile(object):
         mu_low = -100000
         mu_high = 100000
         for i in range( len(self.runs) ):
-            read_err = self.read(self.runs[i])
+            read_err = self.readOneComponent(self.runs[i])
             T_temp = self.getT()
-            mu_temp = self.getmu()
+            mu_temp = self.getmu1()
                 
             if (T_temp not in T):
                 if (self.temp_calc):
@@ -505,7 +639,414 @@ class hisFile(object):
 
         return mu_min, mu_max, T
 
-    def generateCurve2(self, entropy_version=1, save_file=False, mu_len=30, N_lo=[0.01,0.1],N_hi=[60, 130], max_iter=200):
+    def getMuMinMaxTtwoComponent(self):
+        """
+        Get the runs' temperature list and number of mu
+        """
+        T = []
+        mu1_min = []
+        mu1_max = []
+        mu2_min = []
+        mu2_max = []
+        mu_low = [-100000, -100000]
+        mu_high = [100000, 100000]
+        for i in range( len(self.runs) ):
+            read_err = self.readTwoComponent(self.runs[i])
+            T_temp = self.getT()
+            mu1_temp = self.getmu1()
+            mu2_temp = self.getmu2()
+                
+            if (T_temp not in T):
+                if (self.temp_calc):
+                    for i_T in self.temp_calc:
+                        if (abs(T_temp - i_T) / float(i_T) < 0.05):
+                            T.append(T_temp)
+                            mu1_min.append(mu_high[0])
+                            mu1_max.append(mu_low[0])
+                            mu2_min.append(mu_high[1])
+                            mu2_max.append(mu_low[1])
+                else:
+                    T.append(T_temp)
+                    mu1_min.append(mu_high[0])
+                    mu1_max.append(mu_low[0])
+                    mu2_min.append(mu_high[1])
+                    mu2_max.append(mu_low[1])
+
+            for i_T in range( len(T) ):
+                if (T_temp == T[i_T]):
+                    if (mu1_temp < mu1_min[i_T]):
+                        mu1_min[i_T] = mu1_temp
+                    if (mu1_temp > mu1_max[i_T]):
+                        mu1_max[i_T] = mu1_temp
+                    if (mu2_temp < mu2_min[i_T]):
+                        mu2_min[i_T] = mu2_temp
+                    if (mu2_temp > mu2_max[i_T]):
+                        mu2_max[i_T] = mu2_temp
+    
+        for T_calc in self.temp_calc:
+            not_in_array = True
+            for i_T in T:
+                if (abs(i_T - T_calc) / float(T_calc) < 0.05):
+                    not_in_array = False
+                    break
+
+            if not_in_array:
+                print "The temperature in the input (", str(T_calc), ") is not used in any simulation run given to entropy. It may not be as accurate."
+                T.append(T_calc)
+                mu1_min.append(mu_high[0])
+                mu1_max.append(mu_low[0])
+                mu2_min.append(mu_high[1])
+                mu2_max.append(mu_low[1])
+
+        return mu1_min, mu1_max, mu2_min, mu2_max, T
+
+    def generate(self, entropy_version="entropy", save_file=False, mu_len=30, N_lo=[0.01,0.1],N_hi=[60, 130], max_iter=200):
+        if (entropy_version == "entropy" or entropy_version == "entropy2"):
+            self.generateCMCpvtOne(entropy_version, save_file, mu_len, N_lo, N_hi, max_iter)
+
+        elif (entropy_version == "fspvt"):
+            #self.generateCMCpvtTwo(entropy_version, save_file, mu_len, mu_len, [0, 280], [320, 330], [30,35], [], True, max_iter)
+            self.generateCMCpvtTwo(entropy_version, save_file, mu_len, mu_len, N_lo, N_hi, N_lo, N_hi, True, max_iter)
+
+    def generateCMCpvtTwo(self, entropy_version="fspvt", save_file=False, mu1_len=3, mu2_len=3, 
+                                N1_lo=[0.01,0.1], N1_hi=[60, 130], N2_lo=[0.01,0.1], N2_hi=[60, 130],
+                                N1_eq_N2=True, max_iter=50):
+        """
+        Generate a P-N1-N2 that covers ideal gas and high pressure
+        for micellization
+        self-optimizing process:
+            for each temperature
+            generate N1(mu1,mu2) & N2(mu1,mu2) surfaces 
+            if N1_eq_N2==True, then identify the line which intersects the surfaces
+        """
+        import shutil 
+
+        if (entropy_version == "entropy" or entropy_version == "entropy2"):
+            self.n_components = 1    
+        elif (entropy_version == "fspvt"):
+            self.n_components = 2
+
+        # The range that we want the N values to be in
+        N_low_min = [N1_lo[0], N2_lo[0]]
+        N_low_max = [N1_lo[1], N2_lo[1]]
+        N_hi_min = [N1_hi[0], N2_hi[0]]
+        N_hi_max = [N1_hi[1], N2_hi[1]]
+        mu1_min, mu1_max, mu2_min, mu2_max, T = self.getMuMinMaxTtwoComponent()
+
+        # for modifying the range of chemical potentials, so that we get the
+        # range of N values we want
+        mu_min_temp = [0, 0]
+        mu_max_temp = [0, 0]
+        min_N = [1000, 1000]
+        max_N = [0, 0]
+        o_min_N = [1000, 1000]
+        o_max_N = [0, 0]
+        for i_T in [0]:
+        #for i_T in range(len(T)):
+            mu_min_temp[0] = mu1_min[i_T]
+            mu_max_temp[0] = mu1_max[i_T]
+            mu_min_temp[1] = mu2_min[i_T]
+            mu_max_temp[1] = mu2_max[i_T]
+            # generate a grid of values calculated from histogram reweighting
+            print '# grid_iteration N1_low N2_low N1_hi N2_hi'
+            for mu_iter in range(max_iter):
+                a1 = -np.logspace(ma.log(-mu_min_temp[0], 10.), 
+                                 ma.log(-mu_max_temp[0], 10.), mu1_len, base=10.)
+                a2 = -np.logspace(ma.log(-mu_min_temp[1], 10.), 
+                                 ma.log(-mu_max_temp[1], 10.), mu2_len, base=10.)
+                matrix_mu1, matrix_mu2 = np.meshgrid(a1, a2)
+                array_mu1 = matrix_mu1.ravel()
+                array_mu2 = matrix_mu2.ravel()
+                array_T = np.ones(len(array_mu1)) * T
+                N1 = np.zeros((mu1_len, mu2_len))
+                N2 = np.zeros((mu1_len, mu2_len))
+                part = partition()
+                part.setNcomponents(2)
+                runFSPVT(array_T, array_mu1, array_mu2)
+                part.readPVTsimple(self.n_components)
+                N1 = np.reshape(part.N1, (mu1_len, mu2_len))
+                N2 = np.reshape(part.N2, (mu1_len, mu2_len))
+                        
+                # can we refine the chemical potentials to generate the surfaces
+                min_N[0] = np.amin(N1)
+                max_N[0] = np.amax(N1)
+                min_N[1] = np.amin(N2)
+                max_N[1] = np.amax(N2)
+                break_loop = False
+                for i in range(2):
+                    if ((abs(o_min_N[i] - min_N[i])/min_N[i] < 0.001) or
+                        (abs(o_max_N[i] - max_N[i])/max_N[i] < 0.001)):
+                        break_loop = True
+                    else:
+                        break_loop = False
+    
+                    if min_N[i] > N_low_max[i]:
+                        mu_min_temp[i] = mu_min_temp[i]-abs(mu_min_temp[i]*0.1)
+                    elif min_N[i] < N_low_min[0]:
+                        mu_min_temp[i] = mu_min_temp[i]+abs(mu_min_temp[i]*0.1)
+       
+                    if min_N[i] > N_hi_max[0]:
+                        mu_max_temp[i] = mu_max_temp[i]-abs(mu_max_temp[i]*0.1)
+                    elif min_N[i] < N_hi_min[0]:
+                        mu_max_temp[i] = mu_max_temp[i]+abs(mu_max_temp[i]*0.1)
+    
+                    o_min_N[i] = min_N[i]
+                    o_max_N[i] = max_N[i]
+    
+                print mu_iter, min_N[0], min_N[1], max_N[0], max_N[1]
+                if break_loop: break
+
+            # interpolate to get a full function
+            style = 'CloughTocher2DInterpolator'
+            #style = 'RectBivariateSpline'
+            if style == 'RectBivariateSpline': #1
+                N1_interpolate = interpolate.RectBivariateSpline(a1, a2, N1).ev
+                N2_interpolate = interpolate.RectBivariateSpline(a1, a2, N2).ev
+            elif style == 'interp2d': #4
+                N1_interpolate = interpolate.interp2d(matrix_mu1, matrix_mu2, 
+                                                      N1, kind='cubic')
+                N2_interpolate = interpolate.interp2d(matrix_mu1, matrix_mu2, 
+                                                      N2, kind='linear')
+            elif style == 'LinearNDInterpolator': #3
+                crd = list(zip(array_mu1, array_mu2))
+                N1_interpolate = interpolate.LinearNDInterpolator(crd, part.N1)
+                N2_interpolate = interpolate.LinearNDInterpolator(crd, part.N2)
+            elif style == 'NearestNDInterpolator': #5
+                crd = list(zip(array_mu1, array_mu2))
+                N1_interpolate = interpolate.NearestNDInterpolator(crd, part.N1)
+                N2_interpolate = interpolate.NearestNDInterpolator(crd, part.N2)
+            elif style == 'CloughTocher2DInterpolator': #2
+                crd = list(zip(array_mu1, array_mu2))
+                N1_interpolate = interpolate.CloughTocher2DInterpolator(crd, part.N1)
+                N2_interpolate = interpolate.CloughTocher2DInterpolator(crd, part.N2)
+
+            # Find the curve where these two intersect
+            n_test = 30
+            mu1_test_min = mu_min_temp[0]
+            mu1_test_max = mu_max_temp[0]
+            mu2_test_min = mu_min_temp[1]
+            o_max_N_intersection = -100
+            o_min_N_intersection = 100000
+            print '# interpolate_iter min_N_intersection max_N_intersection'
+            for i_iter in range(1):
+            #for i_iter in range(max_iter):
+                mu1_test = np.linspace(mu1_test_min, mu1_test_max, n_test)
+                N_intersection = np.zeros(n_test)
+                mu2_intersection = np.zeros(n_test)
+                for im1 in range(n_test):
+                    if im1 < 5:
+                        mu2_guess = mu1_test[im1]
+                    mu2_intersection[im1] = self.findIntersection( N1_interpolate, 
+                                                                   N2_interpolate, 
+                                                                   mu1_test[im1], 
+                                                                   mu2_guess )
+    
+                    N_intersection[im1] = N1_interpolate( mu1_test[im1], 
+                                                          mu2_intersection[im1] )
+                    mu2_guess = mu2_intersection[im1]
+    
+                # check if the N is in the range
+                min_N_intersection = min(N_intersection)
+                max_N_intersection = max(N_intersection)
+                print i_iter, min_N_intersection, max_N_intersection, min(mu1_test), max(mu1_test), min(mu2_intersection), max(mu2_intersection)
+                if (( N_low_max[0] > min_N_intersection > N_low_min[0]) and
+                    ( N_hi_max[0] > max_N_intersection > N_hi_min[0])):
+                    break
+                elif ((abs(o_min_N_intersection - min_N_intersection) / 
+                                    min_N_intersection < 0.001) and
+                      (abs(o_max_N_intersection - max_N_intersection) / 
+                                    max_N_intersection < 0.001)):
+                    break
+    
+                # Otherwise, let's refine the guess
+                if min_N_intersection > N_low_max[0]:
+                    mu1_test_min = mu1_test_min - abs(mu1_test_min*0.1)
+                elif min_N_intersection < N_low_min[0]:
+                    mu1_test_min = mu1_test_min + abs(mu1_test_min*0.1)
+    
+                if min_N_intersection > N_hi_max[0]:
+                    mu1_test_max = mu1_test_max - abs(mu1_test_max*0.1)
+                elif min_N_intersection < N_hi_min[0]:
+                    mu1_test_max = mu1_test_max + abs(mu1_test_max*0.1)
+
+                o_min_N_intersection = min_N_intersection
+                o_max_N_intersection = max_N_intersection
+    
+            array_T = np.ones(n_test) * T
+            shutil.copyfile('./pvt.dat','./pvt_grid.dat')
+            part = partition()
+            part.setNcomponents(2)
+            runFSPVT(array_T, mu1_test, mu2_intersection)
+            shutil.copyfile('./pvt.dat','./pvt_n1_eq_n2.dat')
+
+    def findIntersection(self, fun1, fun2, x, y0):
+        return fsolve(lambda y : fun1(x, y) - fun2(x, y), y0, xtol=1.e-03)
+            
+    def anotherone(self):
+        temp_tot = []
+        mu_tot = []
+        N_tot = []
+        print 'generating for T =', T[i_T]
+        # Find the max chemical potential
+        mu1_m = [mu1_max[i_T]]
+        mu1_range = mu1_max[i_T] - mu1_min[i_T]
+        mu2_m = [mu2_max[i_T]]
+        mu2_range = mu2_max[i_T] - mu2_min[i_T]
+        temp = []
+        mu1 = []
+        N1 = []
+        mu2 = []
+        N2 = []
+        for i in range(max_iter):
+            done = True
+            part = partition()
+
+            if (entropy_version == "fspvt"):
+                runFSPVT([T[i_T]], mu1_m, mu2_m)
+                part.setNcomponents(2)
+
+            part.readPVTsimple(self.n_components)
+            if (part.N1[0] < N_hi_min[0]):
+                mu1_m[0] = max(mu1_m[0]+(mu1_range*0.01), mu1_m[0]+0.5)
+                done = False
+            elif (part.N1[0] > N_hi_max[0]):
+                mu1_m[0] = min(mu1_m[0]-(mu1_range*0.05), mu1_m[0]-0.01)
+                done = False
+            else:
+                N1_mu_m[0] = part.N1[0]
+
+            if (part.N2[0] < N_hi_min[1]):
+                mu2_m[0] = max(mu2_m[0]+(mu2_range*0.01), mu2_m[0]+0.5)
+                done = False
+            elif (part.N2[0] > N_hi_max[1]):
+                mu2_m[0] = min(mu2_m[0]-(mu2_range*0.05), mu2_m[0]-0.01)
+                done = False
+            else:
+                N2_mu_m[0] = part.N2[0]
+
+            if N1_eq_N2:
+                if done == True:
+                    if abs(part.N2[0] - part.N1[0]) > 1.0:
+                        done = False
+                        if (part.N2[0] > part.N1[0]):
+                            mu2_m[0] = max(mu2_m[0]+(mu2_range*0.01), mu2_m[0]+0.5)
+                            mu1_m[0] = min(mu1_m[0]-(mu1_range*0.05), mu1_m[0]-0.01)
+                        elif (part.N2[0] < part.N1[0]):
+                            mu2_m[0] = min(mu2_m[0]-(mu2_range*0.05), mu2_m[0]-0.01)
+                            mu1_m[0] = max(mu1_m[0]+(mu1_range*0.01), mu1_m[0]+0.5)
+
+            if done == True: 
+                break
+            print i, mu1_m[0], part.N1[0], mu2_m, part.N2[0]
+
+        if (i == max_iter):
+            print 'change the maximum N range!'
+            return
+        print mu1_m[0], mu2_m[0]
+
+        temp.append(T[i_T])
+        mu1.append(mu1_m[0])
+        mu2.append(mu2_m[0])
+
+        # Find the min chemical potential
+        mu1_n = [mu1_min[i_T]]
+        mu2_n = [mu2_min[i_T]]
+
+        part = partition()
+        if (entropy_version == "fspvt"):
+            runFSPVT([T[i_T]], mu1_n, mu2_n)
+            part.setNcomponents(2)
+
+        part.readPVTsimple(self.n_components)
+        pmN1 = part.N1[0]
+        pi_mu1 = mu1_n[0]
+        if (part.N1[0] < N_low_min[0]):
+            mu1_n[0] = max(mu1_n[0]*1.3, mu1_n[0]+0.1)
+        elif (part.N1[0] > N_low_max[0]):
+            mu1_n[0] = min(mu1_n[0]/3.0, mu1_n[0]-2.0)
+
+        pmN2 = part.N2[0]
+        pi_mu2 = mu2_n[0]
+        if (part.N2[0] < N_low_min[1]):
+            mu2_n[0] = max(mu2_n[0]*1.3, mu2_n[0]+0.1)
+        elif (part.N2[0] > N_low_max[1]):
+            mu2_n[0] = min(mu2_n[0]/3.0, mu2_n[0]-2.0)
+
+        for i in range(max_iter):
+            if (N_low_min < part.N1[0] < N_low_max):
+                N_mu_n = part.N1[0]
+                break
+
+            part = partition()
+            if (entropy_version == "fspvt"):
+                runFSPVT([T[i_T]], mu1_n, mu2_n)
+                part.setNcomponents(2)
+
+            part.readPVTsimple(self.n_components)
+
+            m = (part.N1[0] - pmN1) / (mu1_n[0] - pi_mu1)
+            b = part.N1[0] - (m * mu1_n[0])
+            pmN1 = part.N1[0]
+            pi_mu1 = mu1_n[0]
+            mu1_n[0] = (N_low_min[0] - b) / m 
+
+            m = (part.N2[0] - pmN2) / (mu2_n[0] - pi_mu2)
+            b = part.N2[0] - (m * mu2_n[0])
+            pmN2 = part.N2[0]
+            pi_mu2 = mu2_n[0]
+            mu2_n[0] = (N_low_min[1] - b) / m 
+
+        if (i == max_iter):
+            print 'change the minimum N range!'
+            return
+
+        # Find the chemical potentials in between
+        mu1_step = abs(mu1_m[0] - mu1_n[0]) / float(mu1_len)**1.0
+        exponent1 = 1.0 + float(1.0 / mu1_len)
+        mu1_step_temp = mu1_step
+        i_mu1 = mu1_m
+        for im in range(mu1_len):
+            i_mu1[0] -= mu1_step_temp
+            mu1_step_temp = im**exponent1 * mu1_step
+
+            temp.append(T[i_T])
+            mu1.append(i_mu1[0])
+
+        mu2_step = abs(mu2_m[0] - mu2_n[0]) / float(mu2_len)**2.0
+        exponent2 = 1.0 + float(1.0 / mu2_len)
+        mu2_step_temp = mu2_step
+        i_mu2 = mu2_m
+        for im in range(mu2_len):
+            i_mu2[0] -= mu2_step_temp
+            mu2_step_temp = im**exponent2 * mu2_step
+
+            temp.append(T[i_T])
+            mu2.append(i_mu2[0])
+
+        temp.append(T[i_T])
+        mu1.append(mu1_n[0])
+        mu2.append(mu2_n[0])
+
+        temp_tot.extend(temp)
+        mu1_tot.extend(mu1)
+        mu2_tot.extend(mu2)
+
+        temp_tot.reverse()
+        mu1_tot.reverse()
+        mu2_tot.reverse()
+
+        if (entropy_version == "fspvt"):
+            runEntropy(temp_tot, mu1_tot, mu2_tot)
+            part.setNcomponents(2)
+        
+        if (save_file):
+            s_file = open( 'TmuN_sVp.dat', 'w')
+            for i in range( len(mu1_tot) ):
+                s_file.write('%f %f %f\n' % (temp_tot[i], mu1_tot[i], mu2_tot[i]))
+                if i == len(mu1_tot)-1:
+                    s_file.write('stop\n')
+
+    def generateCMCpvtOne(self, entropy_version="entropy", save_file=False, mu_len=30, N_lo=[0.01,0.1],N_hi=[60, 130], max_iter=200):
         """
         Generate a PVT that covers ideal gas and high pressure
         for micellization
@@ -515,11 +1056,16 @@ class hisFile(object):
             find a chemical potential that lands in the range of lower N
             starting from the top step down ramping up the step size to scale somewhat with the N(\mu) function
         """
+        if (entropy_version == "entropy" or entropy_version == "entropy2"):
+            self.n_components = 1    
+        elif (entropy_version == "fspvt"):
+            self.n_components = 2
+
         N_low_min = N_lo[0]
         N_low_max = N_lo[1]
         N_hi_min = N_hi[0]
         N_hi_max = N_hi[1]
-        mu_min, mu_max, T = self.getMuMinMaxT()
+        mu_min, mu_max, T = self.getMuMinMaxToneComponent()
         temp_tot = []
         mu_tot = []
         N_tot = []
@@ -532,18 +1078,24 @@ class hisFile(object):
             mu = []
             N = []
             for i in range(max_iter):
-                if (entropy_version == 1):
-                    runEntropy([T[i_T]], mu_m, [5])
-                else:
-                    runEntropy2([T[i_T]], mu_m, [5])
                 part = partition()
-                part.readPVTsimple()
-                if (part.N[0] < N_hi_min):
+
+                if (entropy_version == "entropy"):
+                    runEntropy([T[i_T]], mu_m, [5])
+                    part.setNcomponents(1)
+                elif (entropy_version == "entropy2"):
+                    runEntropy2([T[i_T]], mu_m, [5])
+                    part.setNcomponents(1)
+                elif (entropy_version == "fspvt"):
+                    part.setNcomponents(2)
+
+                part.readPVTsimple(self.n_components)
+                if (part.N1[0] < N_hi_min):
                     mu_m[0] = max(mu_m[0]+(mu_range*0.01), mu_m[0]+0.5)
-                elif (part.N[0] > N_hi_max):
+                elif (part.N1[0] > N_hi_max):
                     mu_m[0] = min(mu_m[0]-(mu_range*0.05), mu_m[0]-0.01)
                 else:
-                    N_mu_m = part.N[0]
+                    N_mu_m = part.N1[0]
                     break
 
             if (i == max_iter):
@@ -556,34 +1108,45 @@ class hisFile(object):
 
             # Find the min chemical potential
             mu_n = [mu_min[i_T]]
-            if (entropy_version == 1):
-                runEntropy([T[i_T]], mu_n, [5])
-            else:
-                runEntropy2([T[i_T]], mu_n, [5])
+
             part = partition()
-            part.readPVTsimple()
-            pmN = part.N[0]
+            if (entropy_version == "entropy"):
+                runEntropy([T[i_T]], mu_n, [5])
+                part.setNcomponents(1)
+            elif (entropy_version == "entropy2"):
+                runEntropy2([T[i_T]], mu_n, [5])
+                part.setNcomponents(1)
+            elif (entropy_version == "fspvt"):
+                part.setNcomponents(2)
+
+            part.readPVTsimple(self.n_components)
+            pmN = part.N1[0]
             pi_mu = mu_n[0]
-            if (part.N[0] < N_low_min):
+            if (part.N1[0] < N_low_min):
                 mu_n[0] = max(mu_n[0]*1.3, mu_n[0]+0.1)
-            elif (part.N[0] > N_low_max):
+            elif (part.N1[0] > N_low_max):
                 mu_n[0] = min(mu_n[0]/3.0, mu_n[0]-2.0)
 
             for i in range(max_iter):
-                if (N_low_min < part.N[0] < N_low_max):
-                    N_mu_n = part.N[0]
+                if (N_low_min < part.N1[0] < N_low_max):
+                    N_mu_n = part.N1[0]
                     break
 
-                if (entropy_version == 1):
-                    runEntropy([T[i_T]], mu_n, [5])
-                else:
-                    runEntropy2([T[i_T]], mu_n, [5])
                 part = partition()
-                part.readPVTsimple()
+                if (entropy_version == "entropy"):
+                    runEntropy([T[i_T]], mu_n, [5])
+                    part.setNcomponents(1)
+                elif (entropy_version == "entropy2"):
+                    runEntropy2([T[i_T]], mu_n, [5])
+                    part.setNcomponents(1)
+                elif (entropy_version == "fspvt"):
+                    part.setNcomponents(2)
 
-                m = (part.N[0] - pmN) / (mu_n[0] - pi_mu)
-                b = part.N[0] - (m * mu_n[0])
-                pmN = part.N[0]
+                part.readPVTsimple(self.n_components)
+
+                m = (part.N1[0] - pmN) / (mu_n[0] - pi_mu)
+                b = part.N1[0] - (m * mu_n[0])
+                pmN = part.N1[0]
                 pi_mu = mu_n[0]
                 mu_n[0] = (N_low_min - b) / m 
 
@@ -616,10 +1179,15 @@ class hisFile(object):
         mu_tot.reverse()
         N_tot.reverse()
 
-        if (entropy_version == 1):
+        if (entropy_version == "entropy"):
             runEntropy(temp_tot, mu_tot, N_tot)
-        else:
+            part.setNcomponents(1)
+        elif (entropy_version == "entropy2"):
             runEntropy2(temp_tot, mu_tot, N_tot)
+            part.setNcomponents(1)
+        elif (entropy_version == "fspvt"):
+            part.setNcomponents(2)
+
         
         if (save_file):
             s_file = open( 'TmuN_sVp.dat', 'w')
@@ -638,11 +1206,16 @@ class hisFile(object):
             find a chemical potential that lands in the range of lower N
             starting from the top step down in equal increments of N
         """
+        if (entropy_version == "entropy" or entropy_version == "entropy2"):
+            self.n_components = 1    
+        elif (entropy_version == "fspvt"):
+            self.n_components = 2
+
         N_low_min = N_lo[0]
         N_low_max = N_lo[1]
         N_hi_min = N_hi[0]
         N_hi_max = N_hi[1]
-        mu_min, mu_max, T = self.getMuMinMaxT()
+        mu_min, mu_max, T = self.getMuMinMaxToneComponent()
         temp_tot = []
         mu_tot = []
         N_tot = []
@@ -654,18 +1227,22 @@ class hisFile(object):
             mu = []
             N = []
             for i in range(max_iter):
-                if (entropy_version == 1):
-                    runEntropy([T[i_T]], mu_m, [5])
-                else:
-                    runEntropy2([T[i_T]], mu_m, [5])
                 part = partition()
-                part.readPVTsimple()
-                if (part.N[0] < N_hi_min):
+                if (entropy_version == "entropy"):
+                    runEntropy([T[i_T]], mu_n, [5])
+                    part.setNcomponents(1)
+                elif (entropy_version == "entropy2"):
+                    runEntropy2([T[i_T]], mu_n, [5])
+                    part.setNcomponents(1)
+                elif (entropy_version == "fspvt"):
+                    part.setNcomponents(2)
+
+                if (part.N1[0] < N_hi_min):
                     mu_m[0] = max(mu_m[0]*1.1, mu_m[0]+0.5)
-                elif (part.N[0] > N_hi_max):
+                elif (part.N1[0] > N_hi_max):
                     mu_m[0] = min(mu_m[0]/1.1, mu_m[0]-0.01)
                 else:
-                    N_mu_m = part.N[0]
+                    N_mu_m = part.N1[0]
                     break
             if (i == max_iter):
                 print 'change the maximum N range!'
@@ -677,39 +1254,49 @@ class hisFile(object):
 
             # Find the min chemical potential
             mu_n = [mu_min[i_T]]
-            if (entropy_version == 1):
-                runEntropy([T[i_T]], mu_n, [5])
-            else:
-                runEntropy2([T[i_T]], mu_n, [5])
             part = partition()
-            part.readPVTsimple()
-            pmN = part.N[0]
+            if (entropy_version == "entropy"):
+                runEntropy([T[i_T]], mu_n, [5])
+                part.setNcomponents(1)
+            elif (entropy_version == "entropy2"):
+                runEntropy2([T[i_T]], mu_n, [5])
+                part.setNcomponents(1)
+            elif (entropy_version == "fspvt"):
+                part.setNcomponents(2)
+
+            part.readPVTsimple(self.n_components)
+            pmN = part.N1[0]
             pi_mu = mu_n[0]
-            if (part.N[0] < N_low_min):
+            if (part.N1[0] < N_low_min):
                 mu_n[0] = max(mu_n[0]*1.3, mu_n[0]+0.1)
-            elif (part.N[0] > N_low_max):
+            elif (part.N1[0] > N_low_max):
                 mu_n[0] = min(mu_n[0]/3.0, mu_n[0]-2.0)
 
             for i in range(max_iter):
-                if (N_low_min < part.N[0] < N_low_max):
-                    N_mu_n = part.N[0]
+                if (N_low_min < part.N1[0] < N_low_max):
+                    N_mu_n = part.N1[0]
                     break
 
-                if (entropy_version == 1):
-                    runEntropy([T[i_T]], mu_n, [5])
-                else:
-                    runEntropy2([T[i_T]], mu_n, [5])
                 part = partition()
-                part.readPVTsimple()
+                if (entropy_version == "entropy"):
+                    runEntropy([T[i_T]], mu_n, [5])
+                    part.setNcomponents(1)
+                elif (entropy_version == "entropy2"):
+                    runEntropy2([T[i_T]], mu_n, [5])
+                    part.setNcomponents(1)
+                elif (entropy_version == "fspvt"):
+                    part.setNcomponents(2)
 
-                m = (part.N[0] - pmN) / (mu_n[0] - pi_mu)
-                b = part.N[0] - (m * mu_n[0])
-                pmN = part.N[0]
+                part.readPVTsimple(self.n_components)
+
+                m = (part.N1[0] - pmN) / (mu_n[0] - pi_mu)
+                b = part.N1[0] - (m * mu_n[0])
+                pmN = part.N1[0]
                 pi_mu = mu_n[0]
                 mu_n[0] = (N_low_min - b) / m 
-                #if (part.N[0] < N_low_min):
+                #if (part.N1[0] < N_low_min):
                 #    mu_n[0] = max(mu_n[0]*1.3, mu_n[0]+0.1)
-                #elif (part.N[0] > N_low_max):
+                #elif (part.N1[0] > N_low_max):
                 #    mu_n[0] = min(mu_n[0]/3.0, mu_n[0]-2.0)
                 #else:
 
@@ -730,22 +1317,27 @@ class hisFile(object):
                 Nim_min = 0
                 Nim_max = 10000
                 for i in range(max_iter):
-                    if (entropy_version == 1):
-                        runEntropy([T[i_T]], i_mu, [5])
-                    else:
-                        runEntropy2([T[i_T]], i_mu, [5])
                     part = partition()
-                    part.readPVTsimple()
+                    if (entropy_version == "entropy"):
+                        runEntropy([T[i_T]], mu_n, [5])
+                        part.setNcomponents(1)
+                    elif (entropy_version == "entropy2"):
+                        runEntropy2([T[i_T]], mu_n, [5])
+                        part.setNcomponents(1)
+                    elif (entropy_version == "fspvt"):
+                        part.setNcomponents(2)
+
+                    part.readPVTsimple(self.n_components)
 
 
-                    if (abs((part.N[0] - Nim) / Nim) < 0.01):
+                    if (abs((part.N1[0] - Nim) / Nim) < 0.01):
                         mu_step = abs(mu[im] - i_mu[0])
-                        #pmN = part.N[0]
+                        #pmN = part.N1[0]
                         #pi_mu = i_mu[0]
                         break
 
                     if i == 0:
-                        if part.N[0] > Nim:
+                        if part.N1[0] > Nim:
                             top = 1
                             bottom = 0
                             above = -0.2
@@ -758,10 +1350,10 @@ class hisFile(object):
                             below = 0.2
                             factor = below
                         i_mu[0] += mu_step * factor
-                        #m = (i_mu[0] - pi_mu) / (part.N[0] - pmN)
+                        #m = (i_mu[0] - pi_mu) / (part.N1[0] - pmN)
                         #i_mu[0] = ( (Nim - pmN) * m ) + pi_mu
                     else:
-                        if part.N[0] > Nim:
+                        if part.N1[0] > Nim:
                             factor = above
                             if top: 
                                 # was top before bottom?
@@ -783,7 +1375,7 @@ class hisFile(object):
                                 bottom = 0.5
                                 
                         i_mu[0] += mu_step * factor
-                        #i_mu[0] -= mu_step * (part.N[0] - Nim) / Nim * factor
+                        #i_mu[0] -= mu_step * (part.N1[0] - Nim) / Nim * factor
                             #i_mu[0] += mu_step/below
 
                 temp.append(T[i_T])
@@ -802,9 +1394,9 @@ class hisFile(object):
         mu_tot.reverse()
         N_tot.reverse()
 
-        if (entropy_version == 1):
+        if (entropy_version == "entropy"):
             runEntropy(temp_tot, mu_tot, N_tot)
-        else:
+        elif (entropy_version == "entropy2"):
             runEntropy2(temp_tot, mu_tot, N_tot)
         
         if (save_file):
@@ -831,6 +1423,11 @@ class hisFile(object):
                 Below the range, decrease the step size (self.mu_step), so its to the bottom slower
                 Above the range, increase the step size (self.mu_step), so it gets down faster
         """
+        if (entropy_version == "entropy" or entropy_version == "entropy2"):
+            self.n_components = 1    
+        elif (entropy_version == "fspvt"):
+            self.n_components = 2
+
         max_iter = 100
         N_low_min = 0.01
         N_low_max = 0.1
@@ -849,19 +1446,23 @@ class hisFile(object):
             # change mu until the upper and lower N are within both ranges
             for i in range(max_iter):
                 temp, mu, N = self.generateMu(mu_m, T[i_T])
-                if (entropy_version == 1):
-                    runEntropy(temp, mu, N)
-                else:
-                    runEntropy2(temp, mu, N)
                 part = partition()
-                part.readPVTsimple()
-                N_mu_high = part.N[mu_len-1]
+                part.setNcomponents(self.n_components)
+                if (entropy_version == "entropy"):
+                    runEntropy(temp, mu, N)
+                elif (entropy_version == "entropy2"):
+                    runEntropy2(temp, mu, N)
+                elif (entropy_version == "fspvt"):
+                    runFSPVT(temp, mu1, mu2)
+
+                part.readPVTsimple(self.n_components)
+                N_mu_high = part.N1[mu_len-1]
                 if (N_mu_high < N_hi_min):
                     mu_m += 0.01
                 elif (N_mu_high > N_hi_max):
                     mu_m -= 0.01
 
-                N_m_low = part.N[0]
+                N_m_low = part.N1[0]
                 if (N_m_low > N_low_max):
                     self.mu_step *= 2.0
                 elif (N_m_low < N_low_min):
@@ -886,7 +1487,7 @@ class hisFile(object):
                 if i == len(N_tot)-1:
                     s_file.write('stop\n')
             
-    def calcError(self, version=2, write_latex=False):
+    def calcError(self, version="entropy2", write_latex=False):
         """
         Calculate the relative error between the calculated
         pratition function and the
@@ -894,11 +1495,18 @@ class hisFile(object):
         """
         import shutil 
         T = []
-        mu = []
-        N = []
+        mu1 = []
+        N1 = []
         E = []
 
-        # copy files that mave have been run from entropy2, just to save the user in case they forget
+        if (version == "entropy" or version == "entropy2"): 
+            self.n_components = 1
+        elif (version == "fspvt"):
+            self.n_components = 2
+            N2 = []
+            mu2 = []
+
+        # copy files that may have been run from entropy2, just to save the user in case they forget
         cp_pvt = True
         try:
             shutil.copyfile('./pvt.dat','./pvt_tmp.dat')
@@ -911,71 +1519,129 @@ class hisFile(object):
         except IOError:
             cp_hs2 = False
 
-        Nmin = 1000
+        N1min = 1000
         for i in range( len(self.runs) ):
-            read_err = self.read(self.runs[i])
+            if (version == "entropy" or version == "entropy2"): 
+                read_err = self.readOneComponent(self.runs[i])
+            elif (version == "fspvt"):
+                read_err = self.readTwoComponent(self.runs[i])
+                mu2.append(self.getmu2())
+                N2.append(self.getN2ave(2))
             # find the <N> and <E> from histograms
             T.append(self.getT())
-            mu.append(self.getmu())
-            N.append(self.getNave())
-            E.append(self.getEave())
-            if min(self.N) < Nmin:
-                Nmin = min(self.N)
+            mu1.append(self.getmu1())
+            N1.append(self.getN1ave(self.n_components))
+            E.append(self.getEave(self.n_components))
+            if min(N1) < N1min:
+                N1min = min(N1)
 
-        if Nmin != 0:
+        if N1min != 0:
             print 'WARNING none of the histograms go down to N=0'
 
         # run entropy with runs used to develop partition function
-        if (version == 2):
-            runEntropy2(T, mu, N)
-        elif (version == 1):
-            runEntropy(T, mu, N)
-        else:
-            print 'version needs to 2 or 1'
-            return
         part = partition()
-        part.readPVTsimple()
+        if (version == "entropy"):
+            runEntropy(T, mu1, N1)
+            part.setNcomponents(1)
+        elif (version == "entropy2"):
+            runEntropy2(T, mu1, N1)
+            part.setNcomponents(1)
+        elif (version == "fspvt"):
+            runFSPVT(T, mu1, mu2)
+            part.setNcomponents(2)
+        else:
+            print 'version needs to entropy2, entropy or fspatch'
+            return
+
+        part.readPVTsimple(self.n_components)
         if (False): #version == 1):
             for i in range( len(self.runs) ):
-                part.E[i] *= part.N[i]
+                part.E[i] *= part.N1[i]
 
-        print '       run      |  kT      mu   |  N_sim    E_sim  |  N_part   E_part |   %e(N)   %e(E)'
-        print '----------------+---------------+------------------+------------------+-----------------'
-        if write_latex:
-            latex_file = open( 'error.tex', 'w')
-            latex_file.write('\\begin{table}\n')
-            latex_file.write('  \\begin{center}\n')
-            latex_file.write('    \\begin{tabular}{c c | c c | c c | c c}\n')
-            latex_file.write('    \hline\n')
-            latex_file.write('    \hline\n')
-            latex_file.write('    $kT$ & $\mu$ & $\left<N\\right>_{\\text{sim}}$ & '
-                                               '$\left<E\\right>_{\\text{sim}}$ & '
-                                               '$\left<N\\right>_{\ln\\text{Z}}$ & '
-                                               '$\left<E\\right>_{\ln \\text{Z}}$ & '
-                                  '\%e($\left<N\\right>$) & \%e($\left<E\\right>$)\\\\\n')
-            latex_file.write('     \hline\n')
-
-        for i in range( len(self.runs) ):
-            N_err = float(part.N[i] - N[i]) / N[i] * 100.0 
-            E_err = float(part.E[i] - E[i]) / (E[i]+1E-8) * 100.0
-            print ('%15s | %6.3f %6.3f | %6.2f %9.3f | %6.2f %9.3f | %7.2f %7.2f' % 
-                  (self.runs[i], T[i]*self.Tconv, mu[i]*self.Muconv, N[i], E[i]*self.Econv, 
-                  part.N[i], part.E[i]*self.Econv, N_err, E_err))
+        if self.n_components == 1:
+            print '       run      |  kT      mu   |  N_sim    E_sim  |  N_part   E_part |   %e(N)   %e(E)'
+            print '----------------+---------------+------------------+------------------+-----------------'
             if write_latex:
-                latex_file.write('    %6.3f %s %6.3f %s %6.2f %s %9.3f %s %6.2f %s %9.3f %s %7.2f %s %7.2f \\\\\n' % 
-                                ( T[i]*self.Tconv, '&', mu[i]*self.Muconv, '&', N[i], '&', E[i]*self.Econv, '&',
-                                  part.N[i], '&', part.E*self.Econv[i], '&', N_err, '&', E_err))
+                latex_file = open( 'error.tex', 'w')
+                latex_file.write('\\begin{table}\n')
+                latex_file.write('  \\begin{center}\n')
+                latex_file.write('    \\begin{tabular}{c c | c c | c c | c c}\n')
+                latex_file.write('    \hline\n')
+                latex_file.write('    \hline\n')
+                latex_file.write('    $kT$ & $\mu$ & $\left<N\\right>_{\\text{sim}}$ & '
+                                                   '$\left<E\\right>_{\\text{sim}}$ & '
+                                                   '$\left<N\\right>_{\ln\\text{Z}}$ & '
+                                                   '$\left<E\\right>_{\ln \\text{Z}}$ & '
+                                      '\%e($\left<N\\right>$) & \%e($\left<E\\right>$)\\\\\n')
+                latex_file.write('     \hline\n')
+    
+            for i in range( len(self.runs) ):
+                N1_err = float(part.N1[i] - N1[i]) / N1[i] * 100.0 
+                E_err = float(part.E[i] - E[i]) / (E[i]+1E-8) * 100.0
+                print ('%15s | %6.3f %6.3f | %6.2f %9.3f | %6.2f %9.3f | %7.2f %7.2f' % 
+                      (self.runs[i], T[i]*self.Tconv, mu1[i]*self.Muconv, N1[i], E[i]*self.Econv, 
+                      part.N1[i], part.E[i]*self.Econv, N1_err, E_err))
+                if write_latex:
+                    latex_file.write('    %6.3f %s %6.3f %s %6.2f %s %9.3f %s %6.2f %s %9.3f %s %7.2f %s %7.2f \\\\\n' % 
+                                    ( T[i]*self.Tconv, '&', mu1[i]*self.Muconv, '&', N1[i], '&', E[i]*self.Econv, '&',
+                                      part.N1[i], '&', part.E*self.Econv[i], '&', N1_err, '&', E_err))
+    
+            if write_latex:
+                latex_file.write('    \hline\n')
+                latex_file.write('    \hline\n')
+                latex_file.write('    \end{tabular}\n')
+                latex_file.write('  \end{center}\n')
+                latex_file.write('  \\vspace{-0pt}\n')
+                latex_file.write('  \\caption{Comparison of the $\left<N\\right>$ and $\left<E\\right>$ '
+                                 'values from simulations and predicted from the partition function $\ln$Z.}\n')
+                latex_file.write('  \\label{tab:error_table}\n')
+                latex_file.write('\end{table}\n')
+                latex_file.close()
 
-        if write_latex:
-            latex_file.write('    \hline\n')
-            latex_file.write('    \hline\n')
-            latex_file.write('    \end{tabular}\n')
-            latex_file.write('  \end{center}\n')
-            latex_file.write('  \\vspace{-0pt}\n')
-            latex_file.write('  \\caption{Comparison of the $\left<N\\right>$ and $\left<E\\right>$ values from simulations and predicted from the partition function $\ln$Z.}\n')
-            latex_file.write('  \\label{tab:error_table}\n')
-            latex_file.write('\end{table}\n')
-            latex_file.close()
+        elif self.n_components == 2:
+            print '       run      |  kT       mu1     mu2   | N1_sim  N2_sim   E_sim  | N1_part N2_part E_part  |   %e(N1)  %e(N2)  %e(E)'
+            print '----------------+-------------------------+-------------------------+-------------------------+-------------------------'
+            if write_latex:
+                latex_file = open( 'error.tex', 'w')
+                latex_file.write('\\begin{table}\n')
+                latex_file.write('  \\begin{center}\n')
+                latex_file.write('    \\begin{tabular}{c c | c c c | c c c | c c c}\n')
+                latex_file.write('    \hline\n')
+                latex_file.write('    \hline\n')
+                latex_file.write('    $kT$ & $\mu_1$ & $\left<N_1\\right>_{\\text{sim}}$ & '
+                                                   '$\left<N_2\\right>_{\\text{sim}}$ & '
+                                                   '$\left<E\\right>_{\\text{sim}}$ & '
+                                                   '$\left<N_1\\right>_{\ln\\text{Z}}$ & '
+                                                   '$\left<N_2\\right>_{\ln\\text{Z}}$ & '
+                                                   '$\left<E\\right>_{\ln \\text{Z}}$ & '
+                                                   '\%e($\left<N_1\\right>$) & '
+                                                   '\%e($\left<N_2\\right>$) & '
+                                                   '\%e($\left<E\\right>$)\\\\\n')
+                latex_file.write('     \hline\n')
+    
+            for i in range( len(self.runs) ):
+                N1_err = float(part.N1[i] - N1[i]) / N1[i] * 100.0 
+                N2_err = float(part.N2[i] - N2[i]) / N2[i] * 100.0 
+                E_err = float(part.E[i] - E[i]) / (E[i]+1E-8) * 100.0
+                print ('%15s | %6.3f %6.3f %6.3f | %6.2f %6.2f %9.3f | %6.2f %6.2f %9.3f | %7.2f %7.2f %7.2f' % 
+                      (self.runs[i], T[i]*self.Tconv, mu1[i]*self.Muconv, mu2[i]*self.Muconv, N1[i], N2[i], E[i]*self.Econv, 
+                      part.N1[i], part.N2[i], part.E[i]*self.Econv, N1_err, N2_err, E_err))
+                if write_latex:
+                    latex_file.write('    %6.3f %s %6.3f %s %6.3f %s %6.2f %s %6.2f %s %9.3f %s %6.2f %s %6.2f %s %9.3f %s %7.2f %s %7.2f %s %7.2f \\\\\n' % 
+                                    ( T[i]*self.Tconv, '&', mu1[i]*self.Muconv, '&', mu2[i]*self.Muconv, '&', N1[i], '&', N2[i], '&', E[i]*self.Econv, '&',
+                                      part.N1[i], '&', part.N2[i], '&', part.E*self.Econv[i], '&', N1_err, '&', N2_err, '&', E_err))
+    
+            if write_latex:
+                latex_file.write('    \hline\n')
+                latex_file.write('    \hline\n')
+                latex_file.write('    \end{tabular}\n')
+                latex_file.write('  \end{center}\n')
+                latex_file.write('  \\vspace{-0pt}\n')
+                latex_file.write('  \\caption{Comparison of the $\left<N_1\\right>$, $\left<N_2\\right>$ and $\left<E\\right>$ '
+                                 'values from simulations and predicted from the partition function $\ln$Z.}\n')
+                latex_file.write('  \\label{tab:error_table}\n')
+                latex_file.write('\end{table}\n')
+                latex_file.close()
 
         if (cp_hs2):
             shutil.move('./input_hs2_tmp.dat','./input_hs2.dat')
@@ -987,13 +1653,22 @@ class partition(object):
     Read the PVT file from the entropy program suite
     """
 
+    def setNcomponents(self, n_components):
+        self.n_components = n_components
+
     def getE(self):
         return self.E
 
-    def getN(self):
-        return self.N
+    def getN1(self):
+        return self.N1
 
-    def readPVTsimple(self):
+    def getN2(self):
+        if self.n_components >= 2:
+            return self.N2
+        else:
+            return None
+
+    def readPVTsimple(self, n_components):
         pwd = os.getcwd()
         pvt_name = 'pvt.dat'
         # Check that file exists
@@ -1009,21 +1684,36 @@ class partition(object):
         while ('T' not in data):
             data = pvt_file.readline().strip().split()
     
-        self.mu = []
-        self.N = []
+        self.mu1 = []
+        self.N1 = []
         self.E = []
         self.lnZ = []
-        self.lnZliq = []
-        self.lnZgas = []
+        
+        if self.n_components >= 2:
+            self.mu2 = []
+            self.N2 = []
+
+        elif self.n_components == 1:
+            self.lnZliq = []
+            self.lnZgas = []
     
         for line in pvt_file:
             data = line.strip().split()
-            self.mu.append(float(data[1]) )
-            self.N.append( float(data[2]) )
-            self.E.append( float(data[3]) )
-            self.lnZ.append( float(data[4]) )
-            self.lnZliq.append( float(data[5]) )
-            self.lnZgas.append( float(data[6]) )
+            if self.n_components == 1:
+                self.mu1.append(float(data[1]) )
+                self.N1.append( float(data[2]) )
+                self.E.append( float(data[3]) )
+                self.lnZ.append( float(data[4]) )
+                self.lnZliq.append( float(data[5]) )
+                self.lnZgas.append( float(data[6]) )
+
+            elif self.n_components == 2:
+                self.mu1.append(float(data[1]) )
+                self.mu2.append(float(data[2]) )
+                self.E.append( float(data[3]) )
+                self.N1.append( float(data[4]) )
+                self.N2.append( float(data[5]) )
+                self.lnZ.append( float(data[6]) )
     
         pvt_file.close()
 
@@ -1036,8 +1726,8 @@ def main(argv=None):
     parser.add_argument("-e","--error", action="store_true",
                    help='Calculate the error in the N and E by the '
                         'partition function compared to the simulation')
-    parser.add_argument("-v","--version",  metavar='entropy version',
-                        type=int, choices=[1,2],
+    parser.add_argument("-v","--version",  metavar='histogram reweighting version',
+                        type=str, choices=["entropy","entropy2","fspvt"],
                    help='Generate the pvt.dat file for CMC calculation')
     parser.add_argument("-g","--generate", action="store_true",
                    help='Use the partiton function generated a nice series mu values for pvt.dat')
@@ -1065,7 +1755,7 @@ def main(argv=None):
                    help='Chemical potential units for output (should match Energy units)')
 
     if (parser.parse_args().input_file):
-        runs = readRunsFile(parser.parse_args().input_file)
+        runs = readRunsFile(parser.parse_args().input_file, parser.parse_args().version)
     else:
         print 'Must give input file e.g.:'
         print '-i input_hs.dat'
@@ -1096,7 +1786,7 @@ def main(argv=None):
         else:
             N_max_range = [100, 150]
 
-        HIS.generateCurve2(parser.parse_args().version, parser.parse_args().save, mu_length, N_min_range, N_max_range)
+        HIS.generate(parser.parse_args().version, parser.parse_args().save, mu_length, N_min_range, N_max_range)
         #HIS.generateCurveOld(parser.parse_args().generate, parser.parse_args().save, mu_step_size, mu_min, mu_length, N_max_range)
 
 if __name__ == '__main__':
