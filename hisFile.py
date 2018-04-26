@@ -898,10 +898,13 @@ def main(argv=None):
             HIS.writeTwoComponent()
 
     if parser.parse_args().plot_his:
-        if len( parser.parse_args().n_collumn ) == 1:
-            HIS.plot()
-        elif len( parser.parse_args().n_collumn ) == 2:
-            HIS.plotTwoComponent()
+        if ( parser.parse_args().n_collumn ):
+            if len( parser.parse_args().n_collumn ) == 1:
+                HIS.plot()
+            elif len( parser.parse_args().n_collumn ) == 2:
+                HIS.plotTwoComponent()
+        else:
+                HIS.plot()
 
     if (parser.parse_args().write_his == 'cassandra'):
         if parser.parse_args().plot_nmols:
