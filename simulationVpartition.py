@@ -691,26 +691,44 @@ class hisFile(object):
                     break
 
             if not_in_array:
-                print "The temperature in the input (", str(T_calc), ") is not used in any simulation run given to entropy. It may not be as accurate."
+                print "The temperature in the input (", str(T_calc), \
+                       ") is not used in any simulation run given to entropy. ", \
+                       "It may not be as accurate.", \
+                       "Assuming this for prediction."
+                T_near = T_calc*1000
+                for i_T in range(len(T)):
+                    if (abs(T[i_T] - T_calc) < abs(T_near - T_calc)):
+                        T_near = T[i_T]
+                        mu1_min.append(mu1_min[i_T])
+                        mu1_max.append(mu1_max[i_T])
+                        mu2_min.append(mu2_min[i_T])
+                        mu2_max.append(mu2_max[i_T])
+                
                 T.append(T_calc)
-                mu1_min.append(mu_high[0])
-                mu1_max.append(mu_low[0])
-                mu2_min.append(mu_high[1])
-                mu2_max.append(mu_low[1])
+                # since there are no chemical potential data at this temperature
+                # find the the nearest tempearture and use those
+                if T_near == T_calc*1000:
+                    mu1_min.append(mu_high[0])
+                    mu1_max.append(mu_low[0])
+                    mu2_min.append(mu_high[1])
+                    mu2_max.append(mu_low[1])
+
+                print "Assuming this for prediction.", \
+                      " using chemical potential initial guess from T = ", str(T_near)
 
         return mu1_min, mu1_max, mu2_min, mu2_max, T
 
-    def generate(self, entropy_version="entropy", save_file=False, mu_len=30, N_lo=[0.01,0.1],N_hi=[60, 130], max_iter=200):
+    def generate(self, entropy_version="entropy", save_file=False, mu_len=30, N_lo=[0.01,0.1],N_hi=[60, 130], max_iter=200, n1_eq_n2=False):
         if (entropy_version == "entropy" or entropy_version == "entropy2"):
             self.generateCMCpvtOne(entropy_version, save_file, mu_len, N_lo, N_hi, max_iter)
 
         elif (entropy_version == "fspvt"):
             #self.generateCMCpvtTwo(entropy_version, save_file, mu_len, mu_len, [0, 280], [320, 330], [30,35], [], True, max_iter)
-            self.generateCMCpvtTwo(entropy_version, save_file, mu_len, mu_len, N_lo, N_hi, N_lo, N_hi, True, max_iter)
+            self.generateCMCpvtTwo(entropy_version, save_file, mu_len, mu_len, N_lo, N_hi, N_lo, N_hi, n1_eq_n2, 30)
 
     def generateCMCpvtTwo(self, entropy_version="fspvt", save_file=False, mu1_len=3, mu2_len=3, 
                                 N1_lo=[0.01,0.1], N1_hi=[60, 130], N2_lo=[0.01,0.1], N2_hi=[60, 130],
-                                N1_eq_N2=True, max_iter=50):
+                                N1_eq_N2=False, max_iter=50):
         """
         Generate a P-N1-N2 that covers ideal gas and high pressure
         for micellization
@@ -720,6 +738,7 @@ class hisFile(object):
             if N1_eq_N2==True, then identify the line which intersects the surfaces
         """
         import shutil 
+        griddata = False
 
         if (entropy_version == "entropy" or entropy_version == "entropy2"):
             self.n_components = 1    
@@ -727,161 +746,426 @@ class hisFile(object):
             self.n_components = 2
 
         # The range that we want the N values to be in
-        N_low_min = [N1_lo[0], N2_lo[0]]
-        N_low_max = [N1_lo[1], N2_lo[1]]
-        N_hi_min = [N1_hi[0], N2_hi[0]]
-        N_hi_max = [N1_hi[1], N2_hi[1]]
+        # N_lim = [<N min/max>, <upper/lower range bound>,<species>]
+        N_lim = np.array([ [ [N1_lo[0], N2_lo[0]],
+                             [N1_lo[1], N2_lo[1]] ],
+                           [ [N1_hi[0], N2_hi[0]],
+                             [N1_hi[1], N2_hi[1]] ],
+                           [ [N1_lo[0], N2_lo[0]],
+                             [N1_lo[1], N2_lo[1]] ],
+                           [ [N1_hi[0], N2_hi[0]],
+                             [N1_hi[1], N2_hi[1]] ] ])
         mu1_min, mu1_max, mu2_min, mu2_max, T = self.getMuMinMaxTtwoComponent()
+        print T
 
         # for modifying the range of chemical potentials, so that we get the
         # range of N values we want
-        mu_min_temp = [0, 0]
-        mu_max_temp = [0, 0]
-        min_N = [1000, 1000]
-        max_N = [0, 0]
-        o_min_N = [1000, 1000]
-        o_max_N = [0, 0]
-        for i_T in [0]:
-        #for i_T in range(len(T)):
-            mu_min_temp[0] = mu1_min[i_T]
-            mu_max_temp[0] = mu1_max[i_T]
-            mu_min_temp[1] = mu2_min[i_T]
-            mu_max_temp[1] = mu2_max[i_T]
-            # generate a grid of values calculated from histogram reweighting
-            print '# grid_iteration N1_low N2_low N1_hi N2_hi'
-            for mu_iter in range(max_iter):
-                a1 = -np.logspace(ma.log(-mu_min_temp[0], 10.), 
-                                 ma.log(-mu_max_temp[0], 10.), mu1_len, base=10.)
-                a2 = -np.logspace(ma.log(-mu_min_temp[1], 10.), 
-                                 ma.log(-mu_max_temp[1], 10.), mu2_len, base=10.)
-                matrix_mu1, matrix_mu2 = np.meshgrid(a1, a2)
-                array_mu1 = matrix_mu1.ravel()
-                array_mu2 = matrix_mu2.ravel()
-                array_T = np.ones(len(array_mu1)) * T
-                N1 = np.zeros((mu1_len, mu2_len))
-                N2 = np.zeros((mu1_len, mu2_len))
-                part = partition()
-                part.setNcomponents(2)
-                runFSPVT(array_T, array_mu1, array_mu2)
-                part.readPVTsimple(self.n_components)
-                N1 = np.reshape(part.N1, (mu1_len, mu2_len))
-                N2 = np.reshape(part.N2, (mu1_len, mu2_len))
-                        
-                # can we refine the chemical potentials to generate the surfaces
-                min_N[0] = np.amin(N1)
-                max_N[0] = np.amax(N1)
-                min_N[1] = np.amin(N2)
-                max_N[1] = np.amax(N2)
-                break_loop = False
-                for i in range(2):
-                    if ((abs(o_min_N[i] - min_N[i])/min_N[i] < 0.001) or
-                        (abs(o_max_N[i] - max_N[i])/max_N[i] < 0.001)):
-                        break_loop = True
-                    else:
-                        break_loop = False
-    
-                    if min_N[i] > N_low_max[i]:
-                        mu_min_temp[i] = mu_min_temp[i]-abs(mu_min_temp[i]*0.1)
-                    elif min_N[i] < N_low_min[0]:
-                        mu_min_temp[i] = mu_min_temp[i]+abs(mu_min_temp[i]*0.1)
-       
-                    if min_N[i] > N_hi_max[0]:
-                        mu_max_temp[i] = mu_max_temp[i]-abs(mu_max_temp[i]*0.1)
-                    elif min_N[i] < N_hi_min[0]:
-                        mu_max_temp[i] = mu_max_temp[i]+abs(mu_max_temp[i]*0.1)
-    
-                    o_min_N[i] = min_N[i]
-                    o_max_N[i] = max_N[i]
-    
-                print mu_iter, min_N[0], min_N[1], max_N[0], max_N[1]
-                if break_loop: break
+        o_mu_min = [0, 0]
+        o_mu_max = [0, 0]
+        mu_min = [0, 0]
+        mu_max = [0, 0]
+        N_min = [1000, 1000]
+        N_max = [0, 0]
+        o_N_min = [1000, 1000]
+        o_N_max = [0, 0]
+        for i_T in range(len(T)):
+            mu_min[0] = mu1_min[i_T]
+            mu_max[0] = mu1_max[i_T]
+            mu_min[1] = mu2_min[i_T]
+            mu_max[1] = mu2_max[i_T]
+            if griddata:
+                # generate a grid of values calculated from histogram reweighting
+                print '# grid_iteration N1_low N2_low N1_hi N2_hi'
+                for mu_iter in range(max_iter):
+                    
+                    a1 = -np.logspace(ma.log(-mu_min[0], 10.), 
+                                     ma.log(-mu_max[0], 10.), mu1_len, base=10.)
+                    a2 = -np.logspace(ma.log(-mu_min[1], 10.), 
+                                     ma.log(-mu_max[1], 10.), mu2_len, base=10.)
 
-            # interpolate to get a full function
-            style = 'CloughTocher2DInterpolator'
-            #style = 'RectBivariateSpline'
-            if style == 'RectBivariateSpline': #1
-                N1_interpolate = interpolate.RectBivariateSpline(a1, a2, N1).ev
-                N2_interpolate = interpolate.RectBivariateSpline(a1, a2, N2).ev
-            elif style == 'interp2d': #4
-                N1_interpolate = interpolate.interp2d(matrix_mu1, matrix_mu2, 
-                                                      N1, kind='cubic')
-                N2_interpolate = interpolate.interp2d(matrix_mu1, matrix_mu2, 
-                                                      N2, kind='linear')
-            elif style == 'LinearNDInterpolator': #3
-                crd = list(zip(array_mu1, array_mu2))
-                N1_interpolate = interpolate.LinearNDInterpolator(crd, part.N1)
-                N2_interpolate = interpolate.LinearNDInterpolator(crd, part.N2)
-            elif style == 'NearestNDInterpolator': #5
-                crd = list(zip(array_mu1, array_mu2))
-                N1_interpolate = interpolate.NearestNDInterpolator(crd, part.N1)
-                N2_interpolate = interpolate.NearestNDInterpolator(crd, part.N2)
-            elif style == 'CloughTocher2DInterpolator': #2
-                crd = list(zip(array_mu1, array_mu2))
-                N1_interpolate = interpolate.CloughTocher2DInterpolator(crd, part.N1)
-                N2_interpolate = interpolate.CloughTocher2DInterpolator(crd, part.N2)
+                    matrix_mu1, matrix_mu2 = np.meshgrid(a1, a2)
+
+                    array_mu1 = matrix_mu1.ravel()
+                    array_mu2 = matrix_mu2.ravel()
+                    array_T = np.ones(len(array_mu1)) * T[i_T]
+                    part = partition()
+                    part.setNcomponents(2)
+                    runFSPVT(array_T, array_mu1, array_mu2)
+                    part.readPVTsimple(self.n_components)
+                    N_min[0] = np.amin(part.N1)
+                    N_max[0] = np.amax(part.N1)
+                    N_min[1] = np.amin(part.N2)
+                    N_max[1] = np.amax(part.N2)
+
+                    # Refine the chemical potentials to generate the surfaces
+                    for i in range(2):
+                        tm_min, tm_max =self.modifyMuGuess(o_N_min[i], N_min[i],
+                                                           o_N_max[i], N_max[i],
+                                                           o_mu_min[i], mu_min[i],
+                                                           o_mu_max[i], mu_max[i],
+                                                           N_lim[0,0,i], N_lim[1,0,i],
+                                                           N_lim[0,1,i], N_lim[1,1,i])
+                        o_mu_max[i] = mu_max[i]
+                        o_mu_min[i] = mu_min[i]
+                        mu_max[i] = max(tm_max, mu_min[i]*0.99)
+                        mu_min[i] = min(tm_min, mu_max[i]*1.01)
+                        o_N_min[i] = N_min[i]
+                        o_N_max[i] = N_max[i]
+                        
+                    converge_fail, in_N_range = self.checkFailureTwo(o_N_min, N_min,
+                                                                 o_N_max, N_max,
+                                                                 N_lim[0,0,:], N_lim[1,0,:],
+                                                                 N_lim[0,1,:], N_lim[1,1,:])
+
+                    print mu_iter, N_min[0], N_min[1], N_max[0], N_max[1]
+
+                    if in_N_range: break
+                    if converge_fail: break
+
+            else:
+                # first loop over the corners of the matrix, i.e.
+                # set the max and min mu1 and mu2, 
+                # results in 8 chemical potentials
+                # mu_extrema[<mu1_minmax>, <mu2_minmax>, <species_mu>]
+                mu_extrema = np.array( [[ [mu_min[0], mu_min[1]],
+                                         [mu_min[0], mu_max[1]] ],
+                                        [ [mu_max[0], mu_min[1]],
+                                         [mu_max[0], mu_max[1]] ]] )
+                # Set the mu1 extrema to be in range at the current mu2 extrema
+                o_mu_min = mu_extrema[0,0]
+                o_mu_max = mu_extrema[0,1]
+                mu_min = mu_extrema[0,0]
+                mu_max = mu_extrema[0,1]
+                for a1i in range(2):
+                  if a1i == 1:
+                    # use the mu1 that you used previously to get N1 hi or low
+                    mu_extrema[1, 0, 1] = mu_extrema[0, 0, 1]
+                    mu_extrema[1, 1, 1] = mu_extrema[0, 1, 1]
+
+                  for a2i in range(2):
+                    if a2i == 0:
+                      # use the mu1 and mu2 from the preset
+                      o_mu = [mu_extrema[a1i,a2i, 0], mu_extrema[a1i,a2i, 1]]
+                      mu = [mu_extrema[a1i,a2i, 0], mu_extrema[a1i,a2i, 1]]
+                    elif a2i == 1:
+                      # use the mu1 that you used previously to get N1 hi or low
+                      o_mu = [mu_extrema[a1i, 0, 0], mu_extrema[a1i, a2i, 1]]
+                      mu = [mu_extrema[a1i, 0, 0], mu_extrema[a1i, a2i, 1]]
+
+                    o_N = [0, 0]
+                    N = [0, 0]
+                    print '# iter 1_hilo 2_hilo N1 N2 mu1 mu2'
+                    for mu1_iter in range(max_iter):
+                      part = partition()
+                      part.setNcomponents(2)
+                      runFSPVT([T[i_T]], [mu[0]], [mu[1]])
+                      part.readPVTsimple(self.n_components)
+                      N[0] = part.N1[0]
+                      N[1] = part.N2[0]
+
+                      print '  ', mu1_iter, a1i, a2i, N[0], N[1], mu[0], mu[1]
+
+                      ii = 0
+                      jj = 0
+                      for i in range(2):
+                        if i == 0: aii = a1i
+                        if i == 1: aii = a2i
+                        converge_fail, in_N_range = self.checkFailureOneOne(
+                                                       o_N[i], N[i], 
+                                                       N_lim[aii,0,i], 
+                                                       N_lim[aii,1,i])
+                        if in_N_range: ii += 1
+                        if converge_fail: jj += 1
+  
+                      if ii == 2: break
+                      if jj == 2: break
+  
+                      for i in range(2):
+                        # Refine the chemical potentials to generate the surfaces
+                        if i == 0: aii = a1i
+                        if i == 1: aii = a2i
+                        t_mu = self.modifyMuGuessOne(N[i], mu[i],
+                                                     N_lim[aii,0,i], 
+                                                     N_lim[aii,1,i])
+  
+                        o_mu[i] = mu[i]
+                        mu[i] = t_mu
+                        o_N[i] = N[i]
+  
+                    mu_extrema[a1i,a2i,0] = mu[0]
+                    mu_extrema[a1i,a2i,1] = mu[1]
+
+                if True:
+                    a1 = -np.logspace(ma.log(-mu_extrema[0,0,0], 10.), 
+                                     ma.log(-mu_extrema[1,1,0], 10.), mu1_len, base=10.)
+                    a2 = -np.logspace(ma.log(-mu_extrema[0,0,1], 10.), 
+                                     ma.log(-mu_extrema[1,1,1], 10.), mu2_len, base=10.)
+
+                    matrix_mu1, matrix_mu2 = np.meshgrid(a1, a2)
+    
+                    array_mu1 = matrix_mu1.ravel()
+                    array_mu2 = matrix_mu2.ravel()
+                    array_T = np.ones(len(array_mu1)) * T[i_T]
+                    part = partition()
+                    part.setNcomponents(2)
+                    runFSPVT(array_T, array_mu1, array_mu2)
+                    part.readPVTsimple(self.n_components)
+                shutil.copyfile('./pvt.dat','./pvt_'+str(T[i_T])+'.dat')
 
             # Find the curve where these two intersect
-            n_test = 30
-            mu1_test_min = mu_min_temp[0]
-            mu1_test_max = mu_max_temp[0]
-            mu2_test_min = mu_min_temp[1]
-            o_max_N_intersection = -100
-            o_min_N_intersection = 100000
-            print '# interpolate_iter min_N_intersection max_N_intersection'
-            for i_iter in range(1):
-            #for i_iter in range(max_iter):
-                mu1_test = np.linspace(mu1_test_min, mu1_test_max, n_test)
-                N_intersection = np.zeros(n_test)
-                mu2_intersection = np.zeros(n_test)
-                for im1 in range(n_test):
-                    if im1 < 5:
-                        mu2_guess = mu1_test[im1]
-                    mu2_intersection[im1] = self.findIntersection( N1_interpolate, 
-                                                                   N2_interpolate, 
-                                                                   mu1_test[im1], 
-                                                                   mu2_guess )
-    
-                    N_intersection[im1] = N1_interpolate( mu1_test[im1], 
-                                                          mu2_intersection[im1] )
-                    mu2_guess = mu2_intersection[im1]
-    
-                # check if the N is in the range
-                min_N_intersection = min(N_intersection)
-                max_N_intersection = max(N_intersection)
-                print i_iter, min_N_intersection, max_N_intersection, min(mu1_test), max(mu1_test), min(mu2_intersection), max(mu2_intersection)
-                if (( N_low_max[0] > min_N_intersection > N_low_min[0]) and
-                    ( N_hi_max[0] > max_N_intersection > N_hi_min[0])):
-                    break
-                elif ((abs(o_min_N_intersection - min_N_intersection) / 
-                                    min_N_intersection < 0.001) and
-                      (abs(o_max_N_intersection - max_N_intersection) / 
-                                    max_N_intersection < 0.001)):
-                    break
-    
-                # Otherwise, let's refine the guess
-                if min_N_intersection > N_low_max[0]:
-                    mu1_test_min = mu1_test_min - abs(mu1_test_min*0.1)
-                elif min_N_intersection < N_low_min[0]:
-                    mu1_test_min = mu1_test_min + abs(mu1_test_min*0.1)
-    
-                if min_N_intersection > N_hi_max[0]:
-                    mu1_test_max = mu1_test_max - abs(mu1_test_max*0.1)
-                elif min_N_intersection < N_hi_min[0]:
-                    mu1_test_max = mu1_test_max + abs(mu1_test_max*0.1)
+            if N1_eq_N2:
+                # interpolate to get a full function
+                style = 'CloughTocher2DInterpolator'
+                N1_interpolate = self.getInterpolation(array_mu1, array_mu2, part.N1, style)
+                N2_interpolate = self.getInterpolation(array_mu1, array_mu2, part.N2, style)
 
-                o_min_N_intersection = min_N_intersection
-                o_max_N_intersection = max_N_intersection
+                n_test = 15
+                mu1_test_min = o_mu_min[0]
+                mu1_test_max = o_mu_max[0]
+                o_max_N_intersection = -100
+                o_min_N_intersection = 100000
+                print '# interpolate_iter min_N_intersection max_N_intersection'
+                for i_iter in range(max_iter):
+                    mu1_test = np.linspace(mu1_test_min, mu1_test_max, n_test)
+                    N_intersection = np.zeros(n_test)
+                    mu2_intersection = np.zeros(n_test)
+                    for im1 in range(n_test):
+                        if im1 < 5:
+                            mu2_guess = mu1_test[im1]
+                        mu2_intersection[im1] = self.findIntersection( N1_interpolate, 
+                                                                       N2_interpolate, 
+                                                                       mu1_test[im1], 
+                                                                       mu2_guess )
+                        N_intersection[im1] = N1_interpolate( mu1_test[im1], 
+                                                              mu2_intersection[im1] )
+                        #print mu1_test[im1], mu2_guess , N_intersection[im1]
+                        if ma.isnan( N_intersection[im1] ):
+                            break
+                        mu2_guess = mu2_intersection[im1]
+
+                    if ma.isnan( N_intersection[im1] ):
+                        break
+        
+                    # check if the N is in the range
+                    min_N_intersection = min(N_intersection)
+                    max_N_intersection = max(N_intersection)
+                    print i_iter, min_N_intersection, max_N_intersection
+
+                    if (( N_low_max[0] > min_N_intersection > N_low_min[0]) and
+                        ( N_hi_max[0] > max_N_intersection > N_hi_min[0])):
+                        break
+                    elif ((abs(o_min_N_intersection - min_N_intersection) / 
+                                        min_N_intersection < 0.001) and
+                          (abs(o_max_N_intersection - max_N_intersection) / 
+                                        max_N_intersection < 0.001)):
+                        break
+        
+                    # Otherwise, let's refine the guess
+                    if min_N_intersection > N_low_max[0]:
+                        mu1_test_min = mu1_test_min - abs(mu1_test_min*0.1)
+                    elif min_N_intersection < N_low_min[0]:
+                        mu1_test_min = mu1_test_min + abs(mu1_test_min*0.1)
+        
+                    if min_N_intersection > N_hi_max[0]:
+                        mu1_test_max = mu1_test_max - abs(mu1_test_max*0.1)
+                    elif min_N_intersection < N_hi_min[0]:
+                        mu1_test_max = mu1_test_max + abs(mu1_test_max*0.1)
     
-            array_T = np.ones(n_test) * T
-            shutil.copyfile('./pvt.dat','./pvt_grid.dat')
-            part = partition()
-            part.setNcomponents(2)
-            runFSPVT(array_T, mu1_test, mu2_intersection)
-            shutil.copyfile('./pvt.dat','./pvt_n1_eq_n2.dat')
+                    o_min_N_intersection = min_N_intersection
+                    o_max_N_intersection = max_N_intersection
+        
+                shutil.copyfile('./pvt.dat','./pvt_grid.dat')
+                # tweak prediction
+                on1 = -1
+                on2 = -1
+                for im1 in range(n_test):
+                    for j_iter in range(max_iter):
+                        part = partition()
+                        part.setNcomponents(2)
+                        runFSPVT([T[i_T]], [mu1_test[im1]], [mu2_intersection[im1]])
+                        part.readPVTsimple(self.n_components)
+
+                        n1 = part.N1[0]
+                        n2 = part.N2[0]
+
+                        dn = (n1 - n2) / float(n1)
+                        if abs(dn) > 0.01:
+                            mu2_intersection[im1] = (mu2_intersection[im1] 
+                                                   + dn * 0.1 * abs(mu2_intersection[im1]))
+                        else:
+                            break
+
+                        if (abs((on1 - n1) / on1) < 0.0001 and
+                            abs((on2 - n2) / on2) < 0.0001):
+                            break
+                        on1 = n1
+                        on2 = n2
+
+                    print mu1_test[im1], mu2_intersection[im1], n1, n2, dn, abs(on1 - n1) / on1, abs(on2 - n2) / on2
+     
+                array_T = np.ones(n_test) * T[i_T]
+                part = partition()
+                part.setNcomponents(2)
+                runFSPVT(array_T, mu1_test, mu2_intersection)
+                # now starting from intersection of planes, find the actual intersection
+                shutil.copyfile('./pvt.dat','./pvt_n1_eq_n2.dat')
 
     def findIntersection(self, fun1, fun2, x, y0):
-        return fsolve(lambda y : fun1(x, y) - fun2(x, y), y0, xtol=1.e-03)
+        return fsolve(lambda y : fun1(x, y) - fun2(x, y), y0, xtol=1.e-02, maxfev=10000)
             
+    def getInterpolation(self, x, y, z, style='CloughTocher2DInterpolator'):
+        """
+        x, y and z are 1-dimensional data, that are preferably on a grid
+        To use RectBivariateSpline the data must be on a grid
+        """
+        if style == 'RectBivariateSpline': #2
+            # reshape x list to a grid 
+            xx, counts = np.unique(x, return_counts=True)
+            yy, counts = np.unique(y, return_counts=True)
+
+            zz = np.reshape(z, (len(xx), len(yy)))
+            return interpolate.RectBivariateSpline(xx, yy, zz).ev
+        elif style == 'interp2d': #4
+            # reshape x list to a grid 
+            unique, counts = np.unique(x, return_counts=True)
+            n_x = counts[0]
+            unique, counts = np.unique(y, return_counts=True)
+            n_y = counts[0]
+            
+            xx = np.reshape(x, (n_x, n_y))
+            yy = np.reshape(y, (n_x, n_y))
+            zz = np.reshape(z, (n_x, n_y))
+            return interpolate.interp2d(xx, yy, zz, kind='cubic')
+        elif style == 'LinearNDInterpolator': #3
+            crd = list(zip(x, y))
+            return interpolate.LinearNDInterpolator(crd, z)
+        elif style == 'NearestNDInterpolator': #5
+            crd = list(zip(x, y))
+            return interpolate.NearestNDInterpolator(crd, z)
+        elif style == 'CloughTocher2DInterpolator': #1
+            crd = list(zip(x, y))
+            return interpolate.CloughTocher2DInterpolator(crd, z)
+        else:
+            print 'scipy.interpolate method not available'
+            return None
+
+    def checkFailureTwo(self, o_N_min, N_min, o_N_max, N_max,
+                              N_low_min, N_low_max, N_hi_min, N_hi_max):
+        converge_fail = False
+        in_N_range = False
+        for i in range(2):
+            if (abs(o_N_min[i] - N_min[i])/N_min[i] < 0.0001):
+                if N_min[i] < N_low_min[i] or N_min[i] > N_low_max[i]:
+                    converge_fail = True
+            if (abs(o_N_max[i] - N_max[i])/N_max[i] < 0.0001):
+                if N_max[i] < N_hi_min[i] or N_max[i] > N_hi_max[i]:
+                    converge_fail = True
+
+            if( (N_low_max[i] > N_min[i] > N_low_min[i]) and 
+                  (N_hi_max[i] > N_max[i] > N_hi_min[i]) ):
+                if i == 0:
+                    in_N_range = True
+            else:
+                in_N_range = False
+
+        return converge_fail, in_N_range
+
+    def checkFailureOne(self, o_N_min, N_min, o_N_max, N_max,
+                              N_low_min, N_low_max, N_hi_min, N_hi_max):
+
+        converge_fail = False
+        in_N_range = False
+        if (abs(o_N_min - N_min)/N_min < 0.0001):
+            if N_min < N_low_min or N_min > N_low_max:
+                converge_fail = True
+        if (abs(o_N_max - N_max)/N_max < 0.0001):
+            if N_max < N_hi_min or N_max > N_hi_max:
+                converge_fail = True
+
+        if( (N_low_max > N_min > N_low_min) and 
+              (N_hi_max > N_max > N_hi_min) ):
+            in_N_range = True
+
+        return converge_fail, in_N_range
+
+    def checkFailureOneOne(self, o_N, N, N_min, N_max):
+
+        converge_fail = False
+        in_N_range = False
+        if (abs(o_N - N)/N < 0.0001):
+            if N < N_min or N > N_max:
+                converge_fail = True
+
+        if N_max > N > N_min:
+            in_N_range = True
+
+        return converge_fail, in_N_range
+
+    def modifyMuGuess(self, o_N_min, N_min, o_N_max, N_max,
+                            o_mu_min, mu_min, o_mu_max, mu_max,
+                            N_low_min, N_low_max, N_hi_min, N_hi_max):
+
+        mu_max_temp = mu_max
+        mu_min_temp = mu_min
+
+        if N_min > N_low_max:
+            if True:
+                mu_diff = mu_max - mu_min
+                mu_min_temp = ( mu_min
+                                - abs(mu_diff * 0.7 *
+                                 (N_min-N_low_min) / N_min) )
+            else:
+                mu_min_temp = (( (o_mu_min - mu_min)
+                                  / (o_N_min - N_min) 
+                                  * (N_low_min - o_N_min) ) 
+                                  + o_mu_min)
+        elif N_min < N_low_min:
+            if True:
+                mu_diff = mu_max - mu_min
+                mu_min_temp = ( mu_min
+                                + abs(mu_diff * 0.3 *
+                                  (N_low_max-N_min) / N_low_max))
+            else:
+                mu_min_temp = (( (o_mu_min - mu_min)
+                                  / (o_N_min - N_min) 
+                                  * (N_low_max - o_N_min) ) 
+                                  + o_mu_min)
+   
+        if N_max > N_hi_max:
+            if True:
+                mu_diff = mu_max - mu_min
+                mu_max_temp = ( mu_max
+                                - abs(mu_diff * 0.3 *
+                                 (N_max-N_hi_min) / N_max) )
+            else:
+                mu_max_temp = (( (o_mu_max - mu_max)
+                                  / (o_N_max - N_max) 
+                                  * (N_hi_min - o_N_max) ) 
+                                  + o_mu_max)
+        elif N_max < N_hi_min:
+            if True:
+                mu_diff = mu_max - mu_min
+                mu_max_temp = ( mu_max
+                                + abs(mu_diff * 0.7 * 
+                                  (N_hi_max-N_max) / N_hi_min) )
+            else:
+                mu_max_temp = (( (o_mu_max - mu_max)
+                                  / (o_N_max - N_max) 
+                                  * (N_hi_max - o_N_max) ) 
+                                  + o_mu_max)
+
+        return mu_min_temp, mu_max_temp
+    
+    def modifyMuGuessOne(self, N, mu, N_min, N_max):
+        if N > N_max:
+            return ( mu - abs(mu * 0.1 * (N_min-N) / N_min) )
+
+        elif N < N_min:
+            return ( mu + abs(mu * 0.1 * (N_max-N) / N_max) )
+   
+        else:
+            return mu
+    
     def anotherone(self):
         temp_tot = []
         mu_tot = []
@@ -1742,6 +2026,9 @@ def main(argv=None):
     parser.add_argument("--N_hi", type=float, nargs="+",
                    help='Upper bound range of N particles in the generation. eg:'
                         '--N_hi 50 80')
+    parser.add_argument("--n1_eq_n2", action="store_true",
+                   help='Set components 1 and 2 equal eachother. '
+                        'Useful for charge neutrality')
     parser.add_argument("-s","--save", action="store_true",
                    help='Save the T, mu, N generated.  Use the output without simulationVpartition by:'
                         ' entropy2.x < TmuN_sVp.dat')
@@ -1786,7 +2073,8 @@ def main(argv=None):
         else:
             N_max_range = [100, 150]
 
-        HIS.generate(parser.parse_args().version, parser.parse_args().save, mu_length, N_min_range, N_max_range)
+        max_iterations = 100
+        HIS.generate(parser.parse_args().version, parser.parse_args().save, mu_length, N_min_range, N_max_range, max_iterations, parser.parse_args().n1_eq_n2)
         #HIS.generateCurveOld(parser.parse_args().generate, parser.parse_args().save, mu_step_size, mu_min, mu_length, N_max_range)
 
 if __name__ == '__main__':
