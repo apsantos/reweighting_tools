@@ -249,7 +249,7 @@ class partition2pressure(object):
         self.A3_to_m3 = 1.E-30 # A^3 to m^3
         self.atomic_to_kJmol = 100.0
         self.bar_to_kPa = 100.0
-        self.Na = 6.022140857E23 # 1/ mol
+        self.N1a = 6.022140857E23 # 1/ mol
         self.gas_const = 0.0083144621 # kJ / (K mol)
         self.calc_conc = False
         self.calc_rho = False
@@ -283,6 +283,13 @@ class partition2pressure(object):
         self.calc_conc = parser.parse_args().concentration
         self.calc_num_dens = parser.parse_args().num_density
 
+        if (parser.parse_args().n_components == 1):
+            self.n_spec = 1
+        elif (parser.parse_args().n_components == 2):
+            self.n_spec = 2
+        else:
+            self.n_spec = 1
+
         if (parser.parse_args().density):
             self.calc_rho = True
             self.mass = parser.parse_args().density
@@ -302,6 +309,7 @@ class partition2pressure(object):
         self.cmc_method = parser.parse_args().cmc_method
 
     def readPVT(self):
+
         pwd = os.getcwd()
         pvt_name = 'pvt.dat'
         # Check that file exists
@@ -319,12 +327,18 @@ class partition2pressure(object):
         
         self.temp, self.t_max = self.getTempRange()
 
-        self.mu = np.zeros( (self.t_max, len(self.temp)) )
-        self.N = np.zeros( (self.t_max, len(self.temp)) )
+        self.lnZ = np.zeros( (self.t_max, len(self.temp)) )
+        self.mu1 = np.zeros( (self.t_max, len(self.temp)) )
+        self.N1 = np.zeros( (self.t_max, len(self.temp)) )
         params["avgU"] = np.zeros( (self.t_max, len(self.temp)) )
-        lnZ = np.zeros( (self.t_max, len(self.temp)) )
-        params["lnZliq"] = np.zeros( (self.t_max, len(self.temp)) )
-        params["lnZgas"] = np.zeros( (self.t_max, len(self.temp)) )
+
+        if self.n_spec == 1:
+            params["lnZliq"] = np.zeros( (self.t_max, len(self.temp)) )
+            params["lnZgas"] = np.zeros( (self.t_max, len(self.temp)) )
+
+        elif self.n_spec == 2:
+            self.mu2 = np.zeros( (self.t_max, len(self.temp)) )
+            self.N2 = np.zeros( (self.t_max, len(self.temp)) )
 
         t_count = 0
         i = 0
@@ -336,47 +350,61 @@ class partition2pressure(object):
                 i = 0
                 t_count += 1
                 T_cur =  self.temp[t_count]
-            self.mu[i, t_count] = float(data[1])
-            self.N[i, t_count] = float(data[2])
-            params["avgU"][i, t_count] = float(data[3])
-            lnZ[i, t_count] = float(data[4])
-            params["lnZliq"][i, t_count] = float(data[5])
-            params["lnZgas"][i, t_count] = float(data[6])
+
+            if self.n_spec == 1:
+                self.mu1[i, t_count] = float(data[1])
+                self.N1[i, t_count] = float(data[2])
+                params["avgU"][i, t_count] = float(data[3])
+                self.lnZ[i, t_count] = float(data[4])
+                params["lnZliq"][i, t_count] = float(data[5])
+                params["lnZgas"][i, t_count] = float(data[6])
+
+            elif self.n_spec == 2:
+                self.mu1[i, t_count] = float(data[1])
+                self.mu2[i, t_count] = float(data[2])
+                params["avgU"][i, t_count] = float(data[3])
+                self.N1[i, t_count] = float(data[4])
+                self.N2[i, t_count] = float(data[5])
+                self.lnZ[i, t_count] = float(data[6])
+
             i += 1
 
-        if (self.calc_phi):
-            self.x = self.N * self.mono_vol / self.vol
-            if self.calc_pressure:
-                self.pressure = lnZ * self.mono_vol / self.vol
-        elif (self.calc_conc):
-            self.x = self.N / (self.vol * self.Na * self.A3_to_m3)
-            if self.calc_pressure:
-                self.pressure = lnZ * self.temp[t_count] / (self.vol * self.Na * self.A3_to_m3 * self.atomic_to_kJmol * self.bar_to_kPa) #* self.gas_const # temp [=] kJ/mol
-                #self.pressure = lnZ * self.kB * self.temp[t_count] * self.convert_kPa / self.vol
-                if self.calc_t_norm:
-                    self.pressure = self.pressure / self.temp[t_count]
-        elif (self.calc_rho):
-            self.x = self.N * self.mass / (self.vol * self.Na * self.A3_to_cm3)
-            if self.calc_pressure:
-                self.pressure = lnZ * self.temp[t_count] * self.convert_kPa / self.vol
-                if self.calc_t_norm:
-                    self.pressure = self.pressure / self.temp[t_count]
-        elif (self.calc_num_dens):
-            self.x = self.N / self.vol
-            if self.calc_pressure:
-                self.pressure = lnZ * self.temp[t_count] / self.vol
-                if self.calc_t_norm:
-                    self.pressure = self.pressure / self.temp[t_count]
-                #self.pressure = lnZ * self.kB * self.temp[t_count] * self.convert_kPa / self.vol
-        else:
-            self.x = self.N
-
-        if not self.calc_pressure:
-            self.pressure = lnZ
-
+        # calculate conversions
+        self.conversions(t_count)
     
         pvt_file.close()
         return params
+
+    def conversions(self, t_count):
+        if (self.calc_phi):
+            self.x = self.N1 * self.mono_vol / self.vol
+            if self.calc_pressure:
+                self.pressure = self.lnZ * self.mono_vol / self.vol
+        elif (self.calc_conc):
+            self.x = self.N1 / (self.vol * self.N1a * self.A3_to_m3)
+            if self.calc_pressure:
+                self.pressure = self.lnZ * self.temp[t_count] / (self.vol * self.N1a * self.A3_to_m3 * self.atomic_to_kJmol * self.bar_to_kPa) #* self.gas_const # temp [=] kJ/mol
+                #self.pressure = self.lnZ * self.kB * self.temp[t_count] * self.convert_kPa / self.vol
+                if self.calc_t_norm:
+                    self.pressure = self.pressure / self.temp[t_count]
+        elif (self.calc_rho):
+            self.x = self.N1 * self.mass / (self.vol * self.N1a * self.A3_to_cm3)
+            if self.calc_pressure:
+                self.pressure = self.lnZ * self.temp[t_count] * self.convert_kPa / self.vol
+                if self.calc_t_norm:
+                    self.pressure = self.pressure / self.temp[t_count]
+        elif (self.calc_num_dens):
+            self.x = self.N1 / self.vol
+            if self.calc_pressure:
+                self.pressure = self.lnZ * self.temp[t_count] / self.vol
+                if self.calc_t_norm:
+                    self.pressure = self.pressure / self.temp[t_count]
+                #self.pressure = self.lnZ * self.kB * self.temp[t_count] * self.convert_kPa / self.vol
+        else:
+            self.x = self.N1
+
+        if not self.calc_pressure:
+            self.pressure = self.lnZ
 
     def calculateCMC(self):
         if (self.cmc_method == 'spline' or self.cmc_method == 'finite'):
@@ -524,7 +552,7 @@ class partition2pressure(object):
         self.cmc_s = []
         self.cmc_slope = []
         self.cmc_intercept = []
-        self.mu_cmc = []
+        self.mu1_cmc = []
         percentage = 0.1
         m_gas = 1.0
         for itemp in range(len(self.temp)):
@@ -580,7 +608,7 @@ class partition2pressure(object):
                 self.cmc_intercept.append( b_min )
 
             cmc_index = min(range(len(self.x[:,itemp])), key=lambda i: abs(self.x[i,itemp] - self.cmc[itemp]))
-            self.mu_cmc.append( self.mu[cmc_index,itemp] )
+            self.mu1_cmc.append( self.mu1[cmc_index,itemp] )
 
         return self.cmc, self.cmc_s
 
@@ -589,7 +617,7 @@ class partition2pressure(object):
         self.cmc_s = []
         self.cmc_slope = []
         self.cmc_intercept = []
-        self.mu_cmc = []
+        self.mu1_cmc = []
         for itemp in range(len(self.temp)):
             if (itemp in self.itemp_skip): continue
 
@@ -600,7 +628,7 @@ class partition2pressure(object):
             self.cmc.append(i_cmc)
             self.cmc_s.append(i_cmc_e)
             cmc_index = min(range(len(self.x[:,itemp])), key=lambda i: abs(self.x[i,itemp] - self.cmc[itemp]))
-            self.mu_cmc.append( self.mu[cmc_index,itemp] )
+            self.mu1_cmc.append( self.mu1[cmc_index,itemp] )
         
         return self.cmc, self.cmc_s
     
@@ -609,7 +637,7 @@ class partition2pressure(object):
         self.cmc_s = []
         self.cmc_slope = []
         self.cmc_intercept = []
-        self.mu_cmc = []
+        self.mu1_cmc = []
         for itemp in range(len(self.temp)):
             if (itemp in self.itemp_skip): continue
 
@@ -644,7 +672,7 @@ class partition2pressure(object):
             self.cmc.append(popt[2])
             self.cmc_s.append(np.sqrt(np.diag(pcov))[2])
             cmc_index = min(range(len(self.x[:,itemp])), key=lambda i: abs(self.x[i,itemp] - self.cmc[itemp]))
-            self.mu_cmc.append( self.mu[cmc_index,itemp] )
+            self.mu1_cmc.append( self.mu1[cmc_index,itemp] )
             if (False):
                 fig = plt.figure()
                 x = self.x[self.begin_fit:n_points-self.end_fit, itemp]
@@ -691,7 +719,7 @@ class partition2pressure(object):
         self.cmc_s = []
         self.cmc_slope = []
         self.cmc_intercept = []
-        self.mu_cmc = []
+        self.mu1_cmc = []
         for itemp in range(len(self.temp)):
             if (itemp in self.itemp_skip): continue
 
@@ -700,7 +728,7 @@ class partition2pressure(object):
             self.cmc.append(i_cmc)
             self.cmc_s.append(i_cmc_e)
             cmc_index = min(range(len(self.x[:,itemp])), key=lambda i: abs(self.x[i,itemp] - self.cmc[itemp]))
-            self.mu_cmc.append( self.mu[cmc_index,itemp] )
+            self.mu1_cmc.append( self.mu1[cmc_index,itemp] )
             curavture_file = open("Pcurvature" + str(self.temp[itemp]) + ".dat", 'w')
             curavture_file.write("# rho pressure curvature\n")
             for i in range( len(kappa)-1):
@@ -715,7 +743,7 @@ class partition2pressure(object):
         self.cmc_s = []
         self.cmc_slope = []
         self.cmc_intercept = []
-        self.mu_cmc = []
+        self.mu1_cmc = []
         for itemp in range(len(self.temp)):
             if (itemp in self.itemp_skip): continue
 
@@ -724,7 +752,7 @@ class partition2pressure(object):
             self.cmc.append(i_cmc)
             self.cmc_s.append(i_cmc_e)
             cmc_index = min(range(len(self.x[:,itemp])), key=lambda i: abs(self.x[i,itemp] - self.cmc[itemp]))
-            self.mu_cmc.append( self.mu[cmc_index,itemp] )
+            self.mu1_cmc.append( self.mu1[cmc_index,itemp] )
         
         return self.cmc, self.cmc_s
     
@@ -742,7 +770,7 @@ class partition2pressure(object):
 
             cmc_file.write("%f %10.8f %10.8f %10.8f\n" % ( self.temp[itemp], 
                                                     self.cmc[itemp], self.cmc_s[itemp],
-                                                    self.mu_cmc[itemp] ))
+                                                    self.mu1_cmc[itemp] ))
 
     def writePN(self):
         for itemp in range(len(self.temp)):
@@ -772,7 +800,7 @@ class partition2pressure(object):
             for i in range( len(self.pressure[:,itemp]) ):
                 mu_file.write("%10.8f %10.8f %f\n" % (self.x[i, itemp], 
                                                   self.pressure[i, itemp], 
-                                                  self.mu[i, itemp]) )
+                                                  self.mu1[i, itemp]) )
             mu_file.close()
     
     def plot(self):
@@ -861,6 +889,8 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description='Calculate the pressure from'
                                     ' the resulting "pvt.dat" file output from'
                                     '  entropy or entropy2.')
+    parser.add_argument("--n_components", type=int, choices=[1,2],
+                   help='number of components, can either be 1 or 2')
     parser.add_argument("-p","--save_plot", action="store_true",
                    help='Save a figure ploting the pressure versus x')
     parser.add_argument("-s","--show_plot", action="store_true",
