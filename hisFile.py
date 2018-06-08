@@ -201,21 +201,19 @@ class inputFile(object):
         i_line = 0
         max_collumn = max( max(self.n_collumn), self.e_collumn)
         for line in ifile:
+            i_line += 1
             data = line.strip().split()
             nc = len(data)
+            if i_line < start_line: continue
+
             if nc <= max_collumn or i_line >= end_line: 
                 break
 
-            elif i_line >= start_line:
-                if (data[0] != "#"):
-                    	#self.nmols.append( int(float(data[self.n_collumn])) )
-                    	for ispecies in range(len(self.n_collumn)):
-                    	    self.nmols[ispecies].append( int(float( data[ self.n_collumn[ispecies] ] )) )
-
-                    	self.energy.append( float(data[self.e_collumn]) )
-
-
-            i_line += 1
+            if (data[0] != "#"):
+                #self.nmols.append( int(float(data[self.n_collumn])) )
+                for ispecies in range(len(self.n_collumn)):
+                   	self.nmols[ispecies].append( int(float( data[ self.n_collumn[ispecies] ] )) )
+                self.energy.append( float(data[self.e_collumn]) )
 
         if (i_line < (start_line - 10)):
             print ('starting line too high, there are only %s lines' % i_line)
