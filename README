@@ -8,13 +8,20 @@ Process
     (2) write input_hs.dat
         this can also be done using a bash script like genHis.sh
     (3) visualize the histograms using hisFile.py
-    (4) run entropy.x  (/FILELOCATION/entropy.x)
     (4) run order.x    (/FILELOCATION/order.x)
+    (4) run entropy.x  (/FILELOCATION/entropy.x)
     (5) modify tolerance in entr2_par.dat
-    (6) run entropy2.x (/FILELOCATION/entropy2.x) (it generates prediction of partition function in pvt file)
+    (6) run entropy2.x (/FILELOCATION/entropy2.x) (it generates prediction of partition function in pvt.dat file)
     (7) compare the partition function predicition and the runs given with simulationVpartition.py
-    (8) find the CMC and see if the ideal-gas law is obeyed using partition2pressure.py
-    (9) repeat steps 6-8
+  MICELLIZATION
+    (8) generate a a list of "T mu N" to create the lnZ-N curves with simulationVpartition.py
+    (9) find the CMC and see if the ideal-gas law (lnZ=N) is obeyed using partition2pressure.py
+  PHASE EQUILIBRIA
+    (8) modify entr4_par.dat values
+    (9) run entropy4.x (/FILELOCATION/entropy4.x) 
+    (10) check the prediction of crit.dat vs. ising.dat
+    (11) modify entr2_par.dat 'smix' and 'peak separation' values based on entropy4 results
+    (12) run entropy2.x with the phase equilibria function (first: T_C mu_C -N_C  then: T_min T_hi dT; where _C is the critical value)
 
 Pre-analysis
 ------------------------------
@@ -22,7 +29,7 @@ Pre-analysis
         python program that handles his*.dat files
         get help:
             hisFile.py -h
-        to generate histogram
+        to generate histogram from cassandra/non-AZP simulations
         usage:
             hisFile.py -r '$NAME' -w $width -o cassandra -s $skip
             where:
@@ -48,25 +55,48 @@ Histogram reweighting programs
         line 2 - #_$ending_types: $ending 
                 (The program was set up for simulations that created repeat 
                  sims that had different character ending in the filename.) 
-        line - EOF : $NAME
+        line 3 - EOF : $NAME
     order.f90
         Orders the files in input_hs.dat so that there is a maximum initial overlap
     entropy2.f90
         Ferrenbery-Swendsen algorithm program 
     input_hs2.dat
-        Input for entropy2, made by entropy
+        Input for entropy2, made by entropy, modified by entropy2 and entropy4
     entr2_par.dat
         sets tolerance for Ferrenbery-Swendsen algorithm
         Only need to worry about the tolerance for micellization
+            line 1:
+                location of ising.dat
+            line 2:
+                'muincr' incremental mu value for F-S algorithm optimization (sensitive for the time)
+                '2D' T for 2d sims, F for 3d sims
+                'read_s' T for read in the smix value for critical point from command line, F for read from file 
+            line 3:
+                'tolerance' tolerance for converged histograms
+                'accfactor' acceleration factor for F-S algorithm optimization
+            line 4:
+                'mindens' minimum accepted peak separation in ising order parameter
+            line 5:
+                'smix' s parameter in universality scaling
+                'ncrit' number of points in the critical point order parameter, the higher the more points in crit.dat
     ising.dat
         Ising model data for phase separation analysis.
-        MUST be in the same folder as input_hs2.dat
+        put in the same folder as input_hs2.dat or change entr2_par.dat
     entropy4.f90
         Not for Micellization, but for thermodynamic phase transitions
     entr4_par.dat
         parameters for entropy4
+            line 1:
+                sets the initial vector for searching for the optimum where rho_l = rho_v (integral under the gas and liquid density distribution are equal)
+                'T1' initial direction and mag for changing the guess for T_C if the first histogram in input_hs.dat is below the T_C make T1>0, other wise, T1<0 
+                'mu1' initial direction and mag for changing the guess for mu_C if the first histogram in input_hs.dat is below the mu_C make mu1>0, other wise, mu1<0 
+                'smix1' initial direction and mag for changing the guess for smix_C if the first histogram in input_hs.dat is below the smix_C make smix1>0, other wise, smix1<0 
+            line 2:
+                'ftol' tolerance for convergence of optimization
+                'dmu_dT' Change of mu vs. T at rho = rho_c, estimate from the mu and T range of your histograms
+                'smix' s field mixing parameter initial guess
 
-Post-analysis
+Micellization Post-analysis
 ------------------------------
     simulationVpartition.py
         python program to compare the <N> and <E> from simulation histograms with the
