@@ -221,8 +221,8 @@ do ifile = 1,nfiles
         tot_counts = counts
         width = width1
         write (*,'(A)') '  File     T         mu    min/max: N             E        Overlap (10^6)'
-        write (*,'(2A,X,f9.4,X,f12.4,X,2i8,X,2f8.0)') '  ',trim(filename(ifile))//trim(suffix(isuffix)),1/beta,mu,minpart1,maxpart1,&
-                                                   min_ene1,max_ene1
+        write (*,'(2A,X,f9.4,X,f12.4,X,2i8,X,2f8.0)') '  ',trim(filename(ifile))//trim(suffix(isuffix)),1/beta, &
+                                                           mu,minpart1,maxpart1,min_ene1,max_ene1
         write (1,'(A,g12.4,X,2f15.6,X,f13.6,X,f12.6,X,f7.1)') trim(filename(ifile)), counts_file(ifile), 0.,1./beta,mu,width,1.
     else ! patch current data with previous data 
         if (width1 /= width) then
@@ -244,8 +244,8 @@ do ifile = 1,nfiles
                 endif
             enddo
         enddo   
-        write (*,'(2A,X,f9.4,X,f16.4,X,2i8,X,2f8.0,X,f12.3)') '  ',trim(filename(ifile))//trim(suffix(isuffix)),1/beta,mu,minpart1,maxpart1&
-                                                        ,min_ene1,max_ene1,real(noverlap)/1000000.
+        write (*,'(2A,X,f9.4,X,f16.4,X,2i8,X,2f8.0,X,f12.3)') '  ',trim(filename(ifile))//trim(suffix(isuffix)),1/beta,&
+                                                                   mu,minpart1,maxpart1,min_ene1,max_ene1,real(noverlap)/1000000.
     
         if (noverlap == 0) then
             write (*,*) ' No overlap, file ',trim(filename(ifile))//trim(suffix(isuffix))
@@ -259,7 +259,7 @@ do ifile = 1,nfiles
             enddo
         enddo
 
-        write (1,'(A,X,g12.4,X,2f20.6,X,f13.6,X,f12.6,X,f7.1)') trim(filename(ifile)), counts_file(ifile), -scale, 1./beta, mu, width, 1.
+        write(1,'(A,X,g12.4,X,2f20.6,X,f13.6,X,f12.6,X,f7.1)') trim(filename(ifile)),counts_file(ifile),-scale,1./beta,mu,width,1.
 
         do ipart = minpart,maxpart
             do i = 1,npoints
