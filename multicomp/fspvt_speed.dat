@@ -1,0 +1,8 @@
+# compiling flag relative speed (sec) per 9 inp_pvt.dat
+O2  19.76
+O3  20.419
+O3ipo   19.6
+O3ipoxhost  19.68
+O2ipo   19.73
+fast    19.9
+gforO3  33
