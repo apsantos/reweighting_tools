@@ -215,8 +215,8 @@ do while(iostat.ne.-1)
                 avgnum2 = avgnum2 + jpart * exp(dens(ipart,jpart) - logZ)
             enddo
         enddo
-        write (28,'(f7.3,2f10.3,3x,4g12.4)') 1/betap,mu1p,mu2p,avgene,avgnum1,avgnum2,logZ
-        write (*,'(f7.3,2f10.3,3x,4g12.4)') 1/betap,mu1p,mu2p,avgene,avgnum1,avgnum2,logZ
+        write (28,'(f7.3,2f10.3,3x,4g15.7)') 1/betap,mu1p,mu2p,avgene,avgnum1,avgnum2,logZ
+        write (*,'(f7.3,2f10.3,3x,4g15.7)') 1/betap,mu1p,mu2p,avgene,avgnum1,avgnum2,logZ
     endif
 enddo
 
