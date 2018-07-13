@@ -249,7 +249,7 @@ class partition2pressure(object):
         self.A3_to_m3 = 1.E-30 # A^3 to m^3
         self.atomic_to_kJmol = 100.0
         self.bar_to_kPa = 100.0
-        self.N1a = 6.022140857E23 # 1/ mol
+        self.Na = 6.022140857E23 # 1/ mol
         self.gas_const = 0.0083144621 # kJ / (K mol)
         self.calc_conc = False
         self.calc_rho = False
@@ -381,14 +381,14 @@ class partition2pressure(object):
             if self.calc_pressure:
                 self.pressure = self.lnZ * self.mono_vol / self.vol
         elif (self.calc_conc):
-            self.x = self.N1 / (self.vol * self.N1a * self.A3_to_m3)
+            self.x = self.N1 / (self.vol * self.Na * self.A3_to_m3)
             if self.calc_pressure:
-                self.pressure = self.lnZ * self.temp[t_count] / (self.vol * self.N1a * self.A3_to_m3 * self.atomic_to_kJmol * self.bar_to_kPa) #* self.gas_const # temp [=] kJ/mol
+                self.pressure = self.lnZ * self.temp[t_count] / (self.vol * self.Na * self.A3_to_m3 * self.atomic_to_kJmol * self.bar_to_kPa) #* self.gas_const # temp [=] kJ/mol
                 #self.pressure = self.lnZ * self.kB * self.temp[t_count] * self.convert_kPa / self.vol
                 if self.calc_t_norm:
                     self.pressure = self.pressure / self.temp[t_count]
         elif (self.calc_rho):
-            self.x = self.N1 * self.mass / (self.vol * self.N1a * self.A3_to_cm3)
+            self.x = self.N1 * self.mass / (self.vol * self.Na * self.A3_to_cm3)
             if self.calc_pressure:
                 self.pressure = self.lnZ * self.temp[t_count] * self.convert_kPa / self.vol
                 if self.calc_t_norm:
